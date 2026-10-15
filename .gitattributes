@@ -1,0 +1,11 @@
+# These scripts run on Linux clusters. A CRLF checkout breaks the shebang with
+# "bad interpreter: /bin/bash^M", so line endings are pinned rather than left to
+# core.autocrlf on whatever machine happens to clone the repo.
+* text=auto eol=lf
+
+# The one exception: a Windows batch file wants CRLF.
+*.bat text eol=crlf
+
+# Never touched.
+*.bundle binary
+*.tar.gz binary

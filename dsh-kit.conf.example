@@ -1,0 +1,66 @@
+# dsh-kit.conf - what THIS project carries into the UCL Data Safe Haven, and how it is
+# installed there. Copy to dsh-kit.conf (or let the dsh-init skill write it) and fill in.
+#
+# One file, read on both sides of the airlock: by the workstation scripts that build the
+# payload, and - because build_payload.sh carries it - by the scripts inside that unpack,
+# mirror and install it. Nothing else in this repo names your packages.
+#
+# Format: plain KEY="value" lines, nothing else. No $expansion, no command substitution,
+# no arrays - lists are space-separated. It is parsed, not sourced, so bash and
+# PowerShell read it identically and nothing in it can run.
+
+# A short name for the project. Used for the default workspace directory inside
+# (~/Scratch/<project> on the Linux cluster) and in log headers.
+KIT_PROJECT="my-project"
+
+# The git repositories carried in, BASE FIRST: a repo must come after every repo it
+# depends on. Each name is a directory basename, which is also its GitLab project name
+# inside.
+KIT_REPOS="my-library my-analysis"
+
+# Where those repositories are checked out on THIS machine. Relative paths are relative
+# to the directory this file is in. A repo whose directory is not under here can be
+# exported by path: export_bundles.sh --package /path/to/repo
+KIT_REPOS_DIR="../"
+
+# Repos that are EDITED inside the DSH (notebooks, run scripts) rather than mirrored.
+# A mirror is read-only inside and a local edit there is a fault; a working repo is
+# overwritten by the payload when the payload carries it, with local edits parked on a
+# dsh-local/<stamp> branch first. Must be a subset of KIT_REPOS. Usually empty.
+KIT_WORKING_REPOS=""
+
+# How the repos are installed inside.
+#   venv       one .venv, every repo installed editable in one `uv pip install` call,
+#              so first-party names resolve to the local checkouts. The default.
+#   workspace  a uv workspace: a root pyproject.toml listing every repo as a member,
+#              synced with `uv sync --all-packages`. Use it if you already work in a
+#              uv workspace outside. A pyproject.dsh.toml beside this file, if present,
+#              is carried and used as the root verbatim instead of the generated one.
+KIT_INSTALL_MODE="venv"
+
+# Extras to install, as requirement specs naming a repo:  "my-library[plots,fast]".
+# Repos not named here are installed without extras.
+KIT_EXTRAS=""
+
+# The Python the venv is built with must satisfy this. Checked against the interpreter
+# the probe finds; it does NOT pick one for you.
+KIT_PYTHON_SPEC=">=3.11, <3.14"
+
+# Smoke tests run after install. Import names default to every repo name with - -> _;
+# list them explicitly if a repo's import name differs from its directory name.
+KIT_IMPORT_CHECK=""
+# Console scripts (from [project.scripts]) that must run with --help. Optional.
+KIT_CONSOLE_SCRIPTS=""
+
+# GitLab inside the DSH, where the bundles are mirrored and everything is cloned from.
+KIT_GITLAB_HOST="gitlab.idhs.ucl.ac.uk"
+# The group (or your username, for a personal namespace) the projects live under.
+KIT_GITLAB_GROUP="<gitlab-group>"
+# Optional: a different namespace for KIT_WORKING_REPOS, e.g. your personal one when
+# the mirrors live in a shared group.
+KIT_WORKING_NAMESPACE=""
+
+# Which boxes this project uses: dsh-vm (the Windows analysis desktop) and/or
+# dsh-cluster (the Linux batch cluster, reached from the VM). The payload carries
+# only what these need.
+KIT_TARGETS="dsh-vm"

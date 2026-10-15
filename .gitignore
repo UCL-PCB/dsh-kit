@@ -1,0 +1,33 @@
+# Airlock payload, produced by build_payload.sh / export_bundles.sh and carried
+# through by hand. Large, regenerable, and environment-specific - the scripts and
+# dsh-kit.conf are the source of truth. dsh-kit.conf itself IS committed: it is the
+# project's statement of what it carries.
+/DSH_import/
+/DSH_upload/
+/DSH_import.zip
+/DSH_import.zip.sha256
+*.bundle
+*.tar.gz
+
+# Probe output.
+probe_*.txt
+probe_out*.txt
+probe_err*.txt
+
+# Script logs. Every script writes to a Logs/ directory beside the PAYLOAD - see
+# src/carry/any/lib/dsh_log.sh - so none should land here at all. Kept as a backstop
+# for a script run with DSH_LOG_DIR pointed at the checkout, and for editor and tool logs.
+*.log
+Logs/
+*.stackdump
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Claude Code scratch worktrees
+.claude/worktrees/
+
+__pycache__/
+*.pyc
