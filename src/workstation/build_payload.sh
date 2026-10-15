@@ -132,9 +132,13 @@ for f in pyproject.dsh.toml pyproject.dsh-cluster.toml; do
     fi
 done
 
-# The bundles go in whenever the VM is a destination: it is the box that mirrors them
-# into GitLab, and the cluster installs by cloning from there (docs/git_install_route.md).
-# A cluster-only payload carries none - it rides along on a VM that already has them.
+# The bundles go in whenever the VM is a destination. For the cluster it depends on
+# KIT_GITLAB:
+#   no   the bundles are the cluster's only source - install_packages.sh clones from
+#        them there exactly as on the VM - so a cluster payload carries them too.
+#   yes  the VM mirrors them into GitLab and the cluster installs by cloning from
+#        there (docs/git_install_route.md). A cluster-only payload carries none - it
+#        rides along on a VM that already has them.
 #
 # Both uv binaries travel for a --target dsh trip. They are ~25 MB each, the payload
 # goes in once, and carrying only the one you think you need is how a second airlock
@@ -148,6 +152,7 @@ for box in $(dsh_target_boxes "$TARGET"); do
             UV_ASSETS+=(uv-x86_64-pc-windows-msvc.zip)
             ;;
         dsh-cluster)
+            dsh_uses_gitlab || WANT_BUNDLES=1
             UV_ASSETS+=(uv-x86_64-unknown-linux-gnu.tar.gz)
             ;;
     esac
@@ -158,6 +163,7 @@ printf '  conf             %s\n' "$KIT_CONF_FILE"
 printf '  boxes            %s\n' "$(dsh_target_boxes "$TARGET" | tr '\n' ' ')"
 printf '  repos            %s\n' "$KIT_REPOS"
 printf '  install mode     %s\n' "$KIT_INSTALL_MODE"
+printf '  GitLab           %s\n' "$(dsh_uses_gitlab && echo "yes - mirrored on the VM, cloned from GitLab" || echo "no - every box installs from the bundles")"
 printf '  carried files    %s from src/carry/\n' "${#CARRIED[@]}"
 printf '  uv assets        %s\n' "${#UV_ASSETS[@]}"
 printf '  payload dir      %s\n' "$OUT_DIR"
@@ -512,7 +518,7 @@ On the far side, from wherever this folder landed:
      and follow it from step 2.
 
   3. Refreshing an already-built VM:
-       double-click update_dsh_vm.bat     (unpack, mirror to GitLab, reinstall)
+       double-click update_dsh_vm.bat     (unpack, [mirror to GitLab,] reinstall)
 
 Every script writes its log into Logs/ beside the payload, so the result of any
 step is reviewable there without relaying it anywhere.

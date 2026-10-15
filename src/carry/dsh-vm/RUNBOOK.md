@@ -5,17 +5,26 @@ writes `Logs/<script>.log` in the payload directory: read the last lines for `PA
 `FAIL`. Nothing needs copying out.
 
 Run everything in **Git Bash**. Replace `<placeholders>` with your own values. What the
-project is (which repos, which GitLab group) comes from `dsh-kit.conf` beside this file —
+project is (which repos, bundles or GitLab) comes from `dsh-kit.conf` beside this file —
 do not edit it here; it is fixed outside and re-carried.
 
-Steps 1–2 change nothing. Step 4 is the first that changes anything (it pushes to GitLab).
+**Bundles or GitLab?** Look at `KIT_GITLAB` in `dsh-kit.conf` (or at the `GitLab
+(KIT_GITLAB)` line `verify_payload.sh` prints).
+
+- `KIT_GITLAB="no"` — **bundle mode**. The packages install straight from the `.bundle` files
+  in this payload. **Skip steps 3 and 4**, and every line below marked *GitLab only*. Your
+  path is 1, 2, 5, 6, 7, (8), 9.
+- `KIT_GITLAB="yes"` — **GitLab mode**. All steps apply.
+
+Steps 1–2 change nothing. In GitLab mode step 4 is the first that changes anything (it
+pushes to GitLab); in bundle mode it is step 7, which only writes your workspace.
 
 ---
 
 ## Refreshing a VM that is already set up
 
 Upload the new `DSH_upload/` folder, then double-click `update_dsh_vm.bat` in it. That
-unpacks, refreshes the GitLab mirror and reinstalls in one pass, using `~/dsh-kit.env` (see
+unpacks, refreshes the GitLab mirror (GitLab mode only) and reinstalls in one pass, using `~/dsh-kit.env` (see
 the end of this file). **Pass:** the last block of `Logs/update_dsh_vm.log` says PASS.
 From a prompt: `bash ./update_dsh_vm.sh --dry-run` shows what it would run.
 
@@ -54,9 +63,12 @@ FAIL:
   `echo 'export GIT_CEILING_DIRECTORIES=$HOME' >> ~/.bashrc && source ~/.bashrc`
   (detail: `./diagnose/diagnose_git_permissions.sh`)
 - no suitable Python → stop. One must be installed on the VM; ask DSH support.
-- GitLab `HTTP 000` but Artifactory answers → `./diagnose/diagnose_gitlab_reachability.sh`
+- *GitLab only:* GitLab `HTTP 000` but Artifactory answers →
+  `./diagnose/diagnose_gitlab_reachability.sh` (in bundle mode the probe skips GitLab)
 
-### 3. Create the GitLab projects (first time only)
+### 3. Create the GitLab projects — GitLab only, first time only
+
+Bundle mode: skip to step 5.
 
 In the GitLab web UI (`https://gitlab.idhs.ucl.ac.uk`), under the group named
 `KIT_GITLAB_GROUP` in `dsh-kit.conf`, create one project per repo in `KIT_REPOS`, named
@@ -65,7 +77,9 @@ exactly as the repo. **Empty: untick "Initialize repository with a README".**
 If git later refuses you without ever asking for a password: `./reset_gitlab_credential.sh`
 (username and current DSH password).
 
-### 4. Mirror to GitLab — changes state
+### 4. Mirror to GitLab — GitLab only, changes state
+
+Bundle mode: skip to step 5. (Run anyway, it prints "not used" and exits.)
 
 ```bash
 ./mirror_to_gitlab.sh             # first time
@@ -128,8 +142,13 @@ FAIL, by what it names:
 - `DLL load failed … The parameter is incorrect` → back to step 6; then
   `./diagnose/diagnose_numpy_dll.sh --workspace '<workspace-dir>'` and
   `./diagnose/diagnose_import_chain.sh --workspace '<workspace-dir>'`
-- `what is checked out is not what this payload carries` → step 4 with `--refresh` first;
-  if a repo has local edits, `./rescue_local_edits.sh`
+- `what is checked out is not what this payload carries` → read the lines above it:
+  - `has local edits to tracked files` / `cannot fast-forward` / `pull --ff-only FAILED` →
+    `./rescue_local_edits.sh --workspace '<workspace-dir>'`, then the same with `--rescue`,
+    then step 7 again. Never delete the folder: the edits are lost for good.
+  - `.bundle is not in the payload` (bundle mode) → the payload is incomplete;
+    `./verify_payload.sh` says what is missing. Rebuild it outside.
+  - *GitLab only:* otherwise, step 4 with `--refresh` first.
 - `STUB FAILED, function OK` → step 8.
 
 ### 8. Console scripts (only if step 7 said STUB FAILED)
@@ -160,10 +179,12 @@ KIT_PYTHON="<python-path>"
 - `Q:` and `R:` are wiped 30 days after a file arrives. The payload lives in `~/DSH_import`.
 - The VM reboots every Monday 00:00–02:00; a disconnected session dies after 18 h.
 - Your DSH password expires every 90 days. After changing it: regenerate the Artifactory
-  credential (step 5) and run `./reset_gitlab_credential.sh`.
-- The cluster, if this payload was built for it: finish this VM through step 4 first, then
-  copy `~/DSH_import` to the cluster with WinSCP in **binary** mode and run there, in order:
+  credential (step 5) and, *GitLab only*, run `./reset_gitlab_credential.sh`.
+- The cluster, if this payload was built for it: finish this VM through step 2 (step 4 in
+  GitLab mode) first, then copy the whole `~/DSH_import` folder — bundles included — to the
+  cluster with WinSCP in **binary** mode and run there, in order:
   `bash ./verify_payload.sh`, `./probe_cluster.sh`, `./install_uv.sh …` (as step 5),
   `./install_packages.sh --python '<cluster-python-path>'`. Every later trip there:
-  `bash ./update_dsh_cluster.sh --check`, then `bash ./update_dsh_cluster.sh` — always
-  after this VM has refreshed the mirror, never before.
+  `bash ./update_dsh_cluster.sh --check`, then `bash ./update_dsh_cluster.sh`. In GitLab
+  mode always after this VM has refreshed the mirror, never before; in bundle mode the
+  copied folder is all it needs.

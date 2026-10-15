@@ -1,6 +1,6 @@
 ---
 name: dsh-setup
-description: Get this project's Python packages into the UCL Data Safe Haven and installed there — the Windows Desktop analysis VM, and optionally the Linux batch cluster behind it. Builds and verifies the airlock payload outside, then drives the operator through unpack, verify, GitLab mirror, uv, venv location and install inside, one step at a time, knowing the failure modes each box has already produced. Use when asked to set up, import into, provision, refresh, rebuild or re-verify the DSH VM or DSH cluster, to build a DSH_import payload, or when something inside the DSH fails to install or import.
+description: Get this project's Python packages into the UCL Data Safe Haven and installed there — the Windows Desktop analysis VM, and optionally the Linux batch cluster behind it. Builds and verifies the airlock payload outside, then drives the operator through unpack, verify, (optionally) the GitLab mirror, uv, venv location and install inside, one step at a time, knowing the failure modes each box has already produced. Use when asked to set up, import into, provision, refresh, rebuild or re-verify the DSH VM or DSH cluster, to build a DSH_import payload, or when something inside the DSH fails to install or import.
 ---
 
 # dsh-setup
@@ -26,10 +26,16 @@ it that way — a rule that holds everywhere belongs in `cross-target.md` or
 0. **Is there a `dsh-kit.conf` at the repo root?** If not, stop and run `/dsh-init` first.
    Every script reads it; nothing here works without it, and guessing its contents is how
    the wrong repos get carried in. If there is one, read it — `KIT_REPOS`,
-   `KIT_INSTALL_MODE`, `KIT_TARGETS` and `KIT_GITLAB_GROUP` decide most of what follows.
+   `KIT_INSTALL_MODE`, `KIT_TARGETS` and **`KIT_GITLAB`** decide most of what follows.
+   `KIT_GITLAB="no"` (the default, "bundle mode") means every box installs straight from
+   the payload's bundles: **skip every step marked GitLab-only** in the references — the
+   mirror, the GitLab credential, the GitLab project, the git install route. Those scripts
+   print one "not used" line and exit 0 if run anyway. `KIT_GITLAB="yes"` means the VM
+   mirrors the bundles into `KIT_GITLAB_GROUP` and every box clones from GitLab.
 1. **Establish the target.** If the request does not say, ask — do not infer it from the
-   working directory. The VM always comes first: the cluster is reached from it, and
-   reads the GitLab mirror the VM pushes.
+   working directory. The VM always comes first: the cluster is reached from it (the
+   payload folder is copied across from it) and, in GitLab mode, reads the mirror the VM
+   pushes.
 2. **Read `references/cross-target.md`** — always. Config that is generated versus config
    that is copied, and how to keep a check from passing for the wrong reason.
 3. **Read `references/ground-rules.md`** before issuing a single command. It is short, and
@@ -74,8 +80,8 @@ person-specific and **must not be guessed**; ask for them once and carry them th
 - `<workspace-dir>` — where the clones and `.venv` go on the VM. Not known until
   `check_venv_location.sh` has run; never default it.
 
-If `KIT_GITLAB_GROUP` in the conf is still `<gitlab-group>`, that is a third: ask, and have
-the operator fix the conf (outside, then rebuild) or set it in `~/dsh-kit.env` (inside).
+In GitLab mode the conf will not load with `KIT_GITLAB_GROUP` still `<gitlab-group>`, so
+that is settled before the payload is built. In bundle mode it is never read.
 
 Hostnames, by contrast, are known and documented — see `references/dsh-facts.md`. Use them
 as written rather than turning them back into placeholders.

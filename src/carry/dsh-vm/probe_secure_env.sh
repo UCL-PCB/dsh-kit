@@ -16,12 +16,17 @@
 # UCL-documented hosts from the DSH User Guide & FAQs, so the probe is useful with no
 # flags at all. --gitlab / --artifactory still override, and the probe reports what it
 # actually got rather than assuming these answer.
+#
+# GitLab is probed only if the payload's dsh-kit.conf says KIT_GITLAB=yes, there is no
+# conf, or --gitlab is given: in bundle mode nothing here ever talks to GitLab, so
+# whether it answers is not a finding.
 GITLAB_HOST="gitlab.idhs.ucl.ac.uk"
+GITLAB_FLAG=0
 ARTIFACTORY_HOST="artifactory.idhs.ucl.ac.uk"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --gitlab)      GITLAB_HOST="$2"; shift 2 ;;
+        --gitlab)      GITLAB_HOST="$2"; GITLAB_FLAG=1; shift 2 ;;
         --artifactory) ARTIFACTORY_HOST="$2"; shift 2 ;;
         -h|--help)     sed -n '2,14p' "$0"; exit 0 ;;
         *)             echo "Unknown argument: $1"; exit 1 ;;
@@ -46,8 +51,12 @@ dsh_start_log "$@"
 # without one - run from a bare copy of the scripts - so a missing conf only means
 # "any Python 3", said out loud below rather than failed on.
 KIT_PYTHON_SPEC=""
+PROBE_GITLAB=1
 if dsh_kit_settings "$PAYLOAD_DIR" 2>/dev/null; then
     PY_SPEC_SRC="dsh-kit.conf"
+    if ! dsh_uses_gitlab && [ "$GITLAB_FLAG" -eq 0 ]; then
+        PROBE_GITLAB=0
+    fi
 else
     PY_SPEC_SRC="no dsh-kit.conf found - any Python 3"
 fi
@@ -277,7 +286,12 @@ probe_host() {
         RESULT="untestable"
     fi
 }
-probe_host gitlab "$GITLAB_HOST";           V_GITLAB="$RESULT"
+if [ "$PROBE_GITLAB" -eq 1 ]; then
+    probe_host gitlab "$GITLAB_HOST";       V_GITLAB="$RESULT"
+else
+    report gitlab "skipped - KIT_GITLAB=no in dsh-kit.conf (pass --gitlab to probe anyway)"
+    V_GITLAB="not used (KIT_GITLAB=no)"
+fi
 probe_host artifactory "$ARTIFACTORY_HOST"; V_ARTIFACTORY="$RESULT"
 if have curl; then
     code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 8 https://pypi.org/simple/ 2>/dev/null)
@@ -346,5 +360,9 @@ echo "    install completed             y / n   (if not, which package: ........
 echo "    imports + console scripts     y / n   (install_packages.sh's checkpoint)"
 
 hr "Done"
-echo "  Next: push the mirror (./mirror_to_gitlab.sh)."
+if [ "$PROBE_GITLAB" -eq 1 ]; then
+    echo "  Next: push the mirror (./mirror_to_gitlab.sh), then ./install_uv.sh."
+else
+    echo "  Next: ./install_uv.sh, then ./install_packages.sh (no mirror step with KIT_GITLAB=no)."
+fi
 echo "  No compute-node probe applies here; probe_cluster.sh is for a real cluster."

@@ -15,8 +15,9 @@ actually goes through the airlock is staged as `<repo>/DSH_upload/`.
 - Every repo in `KIT_REPOS` is **committed and pushed**. `export_bundles.sh` refuses a dirty
   tracked tree (the SHA in `MANIFEST.txt` would be a lie), a detached HEAD, a branch with no
   `origin/<branch>`, and a commit not on origin. The last one is deliberate: a bundle of an
-  unpushed commit becomes GitLab's tip inside; if that commit is later rebased or amended
-  outside, the next refresh is a non-fast-forward that only a force-push inside can fix.
+  unpushed commit becomes the tip inside (in GitLab, or in the checkouts in bundle mode); if
+  that commit is later rebased or amended outside, the next refresh is a non-fast-forward
+  that has to be repaired by hand inside.
   The fix is always to commit/push in that repo, not to force it. `--allow-unpushed` exists
   for a throwaway test payload only.
 - The uv release assets are on disk: `uv-x86_64-pc-windows-msvc.zip` for `dsh-vm`,
@@ -83,8 +84,14 @@ they sit beside the conf — hand-written workspace roots used instead of the ge
 when `KIT_INSTALL_MODE=workspace`.
 
 `MANIFEST.txt` records, per repo, `repo  branch  sha  role`. Role is `working` for repos in
-`KIT_WORKING_REPOS`, `mirror` otherwise. Everything inside is driven off it: the mirror pushes
-what it lists, the install asserts every mirror clone's HEAD against it.
+`KIT_WORKING_REPOS`, `mirror` otherwise. Everything inside is driven off it: the install
+clones what it lists (from the bundles, or in GitLab mode from GitLab after the mirror has
+pushed what it lists) and asserts every mirror clone's HEAD against it.
+
+**Which payloads carry the bundles** depends on `KIT_GITLAB`. A payload for the VM always
+does. A cluster-only payload (`--target dsh-cluster`) does in bundle mode — the bundles are
+the cluster's only source — and does not in GitLab mode, where the cluster clones from the
+mirror the VM pushed. `build_payload.sh` prints which mode it built for.
 
 `PAYLOAD_CONTENTS.txt` names the target and every file with the path it landed at;
 `verify_payload.sh` checks against that rather than a list compiled into itself.

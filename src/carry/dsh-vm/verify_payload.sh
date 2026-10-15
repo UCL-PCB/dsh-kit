@@ -107,9 +107,13 @@ fi
 # declared: export_bundles.sh writes MANIFEST.txt from the repos it was ASKED to
 # bundle, so a narrower export leaves the previous export's bundles sitting here
 # while the manifest no longer mentions them. Everything downstream is driven off
-# the manifest - mirror_to_gitlab.sh pushes what it lists - so such a repo never
-# reaches GitLab, and install_packages.sh clones whatever GitLab held from some
-# earlier trip. The file being here makes it look deliberate. So it is a FAIL.
+# the manifest - mirror_to_gitlab.sh pushes what it lists, install_packages.sh
+# clones what it lists - so such a repo is silently not refreshed. The file being
+# here makes it look deliberate. So it is a FAIL.
+#
+# In bundle mode (KIT_GITLAB=no) the bundles are the ONLY source of the code inside:
+# there is no GitLab holding an earlier copy to fall back on. So every repo in
+# KIT_REPOS must be bundled in this payload, or it is a FAIL.
 echo
 echo "  --- bundles vs MANIFEST.txt vs dsh-kit.conf ---"
 if [ "$CONF_OK" -eq 0 ]; then
@@ -119,7 +123,10 @@ else
     printf '  %-34s %s\n' "project" "$KIT_PROJECT"
     printf '  %-34s %s\n' "repos (dsh-kit.conf)" "$KIT_REPOS"
     printf '  %-34s %s\n' "install mode" "$KIT_INSTALL_MODE"
+    printf '  %-34s %s\n' "GitLab (KIT_GITLAB)" "$KIT_GITLAB$(dsh_uses_gitlab || echo ' - the bundles are the only source')"
 fi
+BUNDLE_MODE=0
+[ "$CONF_OK" -eq 1 ] && ! dsh_uses_gitlab && BUNDLE_MODE=1
 FAIL_BEFORE="$FAIL"
 FAIL=0
 if [ ! -f MANIFEST.txt ]; then
@@ -131,7 +138,7 @@ else
         repo="${b%.bundle}"
         if ! awk -v p="$repo" '$1==p {f=1} END {exit !f}' MANIFEST.txt; then
             echo "  ${b}: present but NOT IN MANIFEST.txt - left over from an earlier"
-            echo "    export. It will not be mirrored. Re-export with it, or delete it."
+            echo "    export. It will not be installed. Re-export with it, or delete it."
             FAIL=1
         fi
     done
@@ -144,16 +151,22 @@ else
         fi
         if [ "$CONF_OK" -eq 1 ]; then
             case " $KIT_REPOS " in *" $repo "*) ;; *)
-                echo "  ${repo}: bundled, but not in KIT_REPOS - it will be mirrored and"
-                echo "    never installed. Add it to dsh-kit.conf outside, or stop exporting it."
+                echo "  ${repo}: bundled, but not in KIT_REPOS - it will never be installed."
+                echo "    Add it to dsh-kit.conf outside, or stop exporting it."
                 FAIL=1 ;;
             esac
         fi
     done < MANIFEST.txt
     if [ "$CONF_OK" -eq 1 ]; then
         for repo in $KIT_REPOS; do
-            awk -v p="$repo" '$1==p {f=1} END {exit !f}' MANIFEST.txt \
-                || echo "  ${repo}: in KIT_REPOS, not in this payload - its checkout is left as it is"
+            awk -v p="$repo" '$1==p {f=1} END {exit !f}' MANIFEST.txt && continue
+            if [ "$BUNDLE_MODE" -eq 1 ]; then
+                echo "  ${repo}: in KIT_REPOS but NOT in this payload - with KIT_GITLAB=no the"
+                echo "    bundle is the only source. Rebuild the payload outside with every repo."
+                FAIL=1
+            else
+                echo "  ${repo}: in KIT_REPOS, not in this payload - its checkout is left as it is"
+            fi
         done
     fi
     [ "$FAIL" -eq 0 ] && echo "  consistent"
@@ -235,8 +248,12 @@ echo "=== 4. Manifest ==="
 if [ -f MANIFEST.txt ]; then
     sed 's/^/  /' MANIFEST.txt
     echo
-    echo "  Every SHA above is what mirror_to_gitlab.sh pushes and install_packages.sh"
-    echo "  must clone back."
+    if [ "$BUNDLE_MODE" -eq 1 ]; then
+        echo "  Every SHA above is what install_packages.sh must check out from the bundles."
+    else
+        echo "  Every SHA above is what mirror_to_gitlab.sh pushes and install_packages.sh"
+        echo "  must clone back."
+    fi
 else
     echo "  no MANIFEST.txt - this payload carries no bundles."
 fi
@@ -261,8 +278,13 @@ if [ "$FAIL" -eq 0 ]; then
     else
         echo "  This is a Linux box. Next (first trip only):"
     fi
-    echo "    ./probe_secure_env.sh --gitlab ${KIT_GITLAB_HOST:-gitlab.idhs.ucl.ac.uk} --artifactory artifactory.idhs.ucl.ac.uk"
-    echo "  On a refresh: ./mirror_to_gitlab.sh --refresh, then ./install_packages.sh"
+    if [ "$BUNDLE_MODE" -eq 1 ]; then
+        echo "    ./probe_secure_env.sh --artifactory artifactory.idhs.ucl.ac.uk"
+        echo "  On a refresh: ./install_packages.sh (it reads the bundles; no mirror step)"
+    else
+        echo "    ./probe_secure_env.sh --gitlab ${KIT_GITLAB_HOST:-gitlab.idhs.ucl.ac.uk} --artifactory artifactory.idhs.ucl.ac.uk"
+        echo "  On a refresh: ./mirror_to_gitlab.sh --refresh, then ./install_packages.sh"
+    fi
     exit 0
 else
     echo "  FAIL - do not continue. See the sections marked above," >&2

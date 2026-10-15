@@ -76,8 +76,19 @@ share a basename; the build refuses. Every carried script sources `lib/dsh_log.s
 What describes **a machine** — the workspace directory, the interpreter path, where the
 payload unpacks — goes in `~/dsh-kit.env` **on that machine**, same `KEY="value"` format,
 parsed the same way, never carried: `KIT_WORKSPACE_DIR`, `KIT_PYTHON`, `KIT_PAYLOAD_DIR`,
-`KIT_ZIP`, `KIT_CLEAN_PATH`, plus per-machine overrides of `KIT_GITLAB_HOST`,
+`KIT_ZIP`, `KIT_CLEAN_PATH`, plus (GitLab mode) per-machine overrides of `KIT_GITLAB_HOST`,
 `KIT_GITLAB_GROUP`, `KIT_WORKING_NAMESPACE`. Precedence: flag > `~/dsh-kit.env` > conf.
+
+## GitLab is optional
+
+`KIT_GITLAB` in the conf (`docs/adr/0005-gitlab-is-optional.md`). `no`, the default, is
+**bundle mode**: every box clones from the payload's `.bundle` files and refreshes from the
+next payload's, and there is no mirror step, GitLab project or credential. `yes` routes the
+repos through GitLab-inside: the VM mirrors the bundles there and every box clones from it.
+A script that only means anything in GitLab mode calls `dsh_gitlab_only` right after
+`dsh_kit_settings` and exits 0 with one "not used" line in bundle mode; keep new
+GitLab-only scripts to that pattern rather than carrying them conditionally. Never call
+`dsh_repo_remote` in a code path bundle mode reaches.
 
 Never carry a config that holds an absolute path or a credential from one machine to
 another. Generate it on the target. A Windows path carried to the Linux cluster does not

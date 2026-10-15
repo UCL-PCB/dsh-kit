@@ -4,9 +4,15 @@
 Desktop VM** — there is no path to it from outside, and none from here. Read
 `ground-rules.md` first.
 
-Do `desktop-vm.md` before this one, through step 4 at least: the payload reaches the cluster
-by WinSCP from the Desktop, and code reaches it by cloning from the GitLab mirror that the
-VM's step 4 populated. The cluster is a **reader** of that mirror and never pushes to it.
+Do `desktop-vm.md` before this one, through step 2 at least (step 4 in GitLab mode): the
+payload reaches the cluster by WinSCP from the Desktop. Where the code comes from is
+`KIT_GITLAB` in the conf:
+
+- **bundle mode** (`no`, the default) — from the `.bundle` files in the payload folder,
+  exactly as on the VM. A cluster payload carries the bundles in this mode, and nothing
+  here depends on the VM having done anything but pass the folder across.
+- **GitLab mode** (`yes`) — by cloning from the GitLab mirror the VM's step 4 populated. The
+  cluster is a **reader** of that mirror and never pushes to it.
 
 Everything in `desktop-vm.md` applies except where listed below. The scripts detect the
 platform themselves (`lib/dsh_platform.sh`) and pick the right asset and paths, so the
@@ -29,10 +35,11 @@ scripts.
 
 Two routes, and they answer different needs:
 
-- **Code**: cloned from `gitlab.idhs.ucl.ac.uk`, reachable from both boxes and the
-  sanctioned way to move code between them. `install_packages.sh` does this.
-- **The payload itself** (scripts, conf, manifest, uv): **WinSCP** from the Desktop VM, the
-  whole `~/DSH_import` folder. There is no portal route to the cluster, and scripted SSH from
+- **Code**: in bundle mode, the bundles inside the payload folder below. In GitLab mode,
+  cloned from `gitlab.idhs.ucl.ac.uk`, reachable from both boxes and the sanctioned way to
+  move code between them. `install_packages.sh` does either.
+- **The payload itself** (scripts, conf, manifest, uv, and in bundle mode the bundles):
+  **WinSCP** from the Desktop VM, the whole `~/DSH_import` folder. There is no portal route to the cluster, and scripted SSH from
   the VM is closed by site policy (`docs/adr/0002-…`).
 
 **Binary mode, and CRLF is the documented trap.** A file edited in Notepad on the Desktop and
@@ -41,9 +48,10 @@ copied in text mode breaks in ways that look like anything but a line-ending pro
 hand-copied file, `sed -i 's/\r$//' <file>` is the fix. A hand-copied script also arrives
 without its executable bit — `bash ./<script>`, or `chmod +x`.
 
-The `.bundle` files do not need to travel unless a working repo is being refreshed — the
-cluster pulls mirrors from GitLab — but copying the whole folder is simplest. What must be
-current is `MANIFEST.txt`: the install asserts every mirror clone against it.
+In bundle mode the `.bundle` files **must** travel — they are the only source, and
+`verify_payload.sh` fails without them. In GitLab mode they matter only if a working repo is
+being refreshed, but copying the whole folder is simplest either way. What must be current
+is `MANIFEST.txt`: the install asserts every mirror clone against it.
 
 ## Step 1 — verify
 
@@ -59,6 +67,8 @@ of a folder, `bash ./unpack_payload.sh` as on the VM.
 ```bash
 ./probe_cluster.sh --gitlab gitlab.idhs.ucl.ac.uk --artifactory artifactory.idhs.ucl.ac.uk
 ```
+
+(In bundle mode GitLab reachability is not needed; its line is informational.)
 
 Expect a **scheduler**: the UCL FAQ documents Son of Grid Engine, so `qsub`/`qstat`. Finding
 Slurm means job scripts need rewriting rather than repointing; record it. It also reports
@@ -129,8 +139,9 @@ before using the venv, because the venv's interpreter links against the module's
 Same modes, same pass line, same diagnosis as `desktop-vm.md` step 7. Same CRLF and
 backslash cautions for anything that came from the VM (`cross-target.md`).
 
-If SSH keys are wanted for GitLab from here: **2048-bit RSA only, ED25519 is not supported.**
-An https credential stored by git works too, and is what uv needs for the git route below.
+GitLab mode only: if SSH keys are wanted for GitLab from here, **2048-bit RSA only, ED25519
+is not supported.** An https credential stored by git works too, and is what uv needs for the
+git route below.
 
 ## Every trip after the first
 
@@ -139,19 +150,24 @@ bash ./update_dsh_cluster.sh --check     # change nothing, report what is behind
 bash ./update_dsh_cluster.sh             # unpack if a zip is here, then install
 ```
 
-**Order matters across the two boxes**: `update_dsh_vm.bat` on the VM first (that is what
-pushes the new commits to GitLab), then WinSCP the payload over, then this. Running it before
-the VM has mirrored gets a clean fast-forward to the *old* commit and a MANIFEST mismatch,
-which the install reports as a FAIL rather than installing it.
+In bundle mode: WinSCP the new payload folder over, then this. The bundles in it are the
+source; nothing on the VM has to run first.
+
+In GitLab mode **order matters across the two boxes**: `update_dsh_vm.bat` on the VM first
+(that is what pushes the new commits to GitLab), then WinSCP the payload over, then this.
+Running it before the VM has mirrored gets a clean fast-forward to the *old* commit and a
+MANIFEST mismatch, which the install reports as a FAIL rather than installing it.
 
 `--check` compares three things per repo — what is checked out here, what the manifest says,
-and GitLab's branch tip — and names which is behind. Run it before submitting a job rather
+and the source's tip (the bundle's in bundle mode, GitLab's in GitLab mode) — and names which
+is behind. Run it before submitting a job rather
 than discovering a stale install partway into one. Settings come from the cluster's own
 `~/dsh-kit.env` (`KIT_WORKSPACE_DIR`, `KIT_PYTHON`).
 
-## Optional: the git install route
+## Optional: the git install route (GitLab-only)
 
-An alternative for the cluster only: let uv fetch each repo straight from GitLab-inside as a
+Needs `KIT_GITLAB="yes"`; in bundle mode both scripts below print "not used" and exit 0. An
+alternative for the cluster only: let uv fetch each repo straight from GitLab-inside as a
 **pinned git source**, at the exact commit `MANIFEST.txt` records, instead of editable clones.
 A batch job then runs one known commit, and nothing can be edited or fast-forwarded under a
 running job. The cost is that nothing is editable — new code arrives as a new payload. The

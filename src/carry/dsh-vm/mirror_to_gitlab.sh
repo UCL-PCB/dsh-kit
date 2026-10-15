@@ -43,6 +43,7 @@ PAYLOAD_DIR="$SELF_DIR"
 # shellcheck source=../any/lib/dsh_platform.sh
 . "${PAYLOAD_DIR}/lib/dsh_platform.sh"
 dsh_kit_settings "$PAYLOAD_DIR" || exit 1
+dsh_gitlab_only "$(basename "$0")" || exit 0
 
 # Defaults from dsh-kit.conf / ~/dsh-kit.env; the flags below override them.
 GITLAB_HOST="$KIT_GITLAB_HOST"

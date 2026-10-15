@@ -1,5 +1,11 @@
 # Installing from git instead of cloning — the cluster's optional route
 
+**GitLab mode only.** This route needs `KIT_GITLAB="yes"` in `dsh-kit.conf`: it installs from
+the GitLab mirror, which bundle mode never creates. In bundle mode (`KIT_GITLAB="no"`, the
+default) `probe_gitlab_install_route.sh` and `install_git_route.sh` print one "not used" line
+and exit 0; the cluster installs from the payload's bundles with `install_packages.sh`, as
+the VM does. See `docs/adr/0005-gitlab-is-optional.md`.
+
 Both DSH boxes can reach GitLab-inside, and once the Desktop VM has mirrored the bundles there
 it holds every repo in `KIT_REPOS` at the commits `MANIFEST.txt` records. On the cluster that
 opens a second way to install: instead of cloning each repo into `src/` and installing it

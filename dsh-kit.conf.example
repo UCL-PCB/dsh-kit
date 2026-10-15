@@ -52,6 +52,16 @@ KIT_IMPORT_CHECK=""
 # Console scripts (from [project.scripts]) that must run with --help. Optional.
 KIT_CONSOLE_SCRIPTS=""
 
+# Whether to use the DSH's internal GitLab at all.
+#   no   the repos are cloned straight from the bundles in the payload, on every box
+#        the payload goes to, and refreshed by fetching from the next payload's
+#        bundles. No GitLab project, credential or mirror step. The default.
+#   yes  the bundles are first mirrored into GitLab projects, and every box clones
+#        from GitLab - so other people inside can clone the same history, and the
+#        DSH cluster can install through uv git sources. The keys below apply only
+#        when this is yes.
+KIT_GITLAB="no"
+
 # GitLab inside the DSH, where the bundles are mirrored and everything is cloned from.
 KIT_GITLAB_HOST="gitlab.idhs.ucl.ac.uk"
 # The group (or your username, for a personal namespace) the projects live under.

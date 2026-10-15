@@ -1,6 +1,6 @@
 @echo off
 REM INSIDE. Double-clickable wrapper for update_dsh_vm.sh, which lives beside this file:
-REM unpack the new payload, refresh the GitLab mirror, reinstall the packages. Every input
+REM unpack the new payload, refresh the GitLab mirror (GitLab mode only), reinstall. Every input
 REM comes from %USERPROFILE%\dsh-kit.env and the payload's dsh-kit.conf, so there is
 REM nothing to type and nothing to remember between trips.
 REM

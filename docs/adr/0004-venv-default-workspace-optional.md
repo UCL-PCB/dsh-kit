@@ -5,7 +5,8 @@ Status: Accepted
 ## Context
 
 The install inside the DSH has one hard requirement: a project's first-party packages must
-resolve to the checkouts cloned from GitLab-inside, never to an index. They are not on
+resolve to the checkouts cloned inside (from the bundles, or from GitLab-inside), never
+to an index. They are not on
 Artifactory, and if public PyPI were ever reachable a bare first-party name could resolve to
 whatever someone uploaded under it.
 

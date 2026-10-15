@@ -81,15 +81,40 @@ test_every_carried_file_is_listed_under_its_group() {
 }
 
 test_kit_targets_decides_the_default_target() {
+    two_repo_project 'KIT_TARGETS=dsh-cluster' 'KIT_GITLAB=yes' 'KIT_GITLAB_GROUP=grp'
+
+    build
+    assert_exit 0
+    assert_file_contains "$(OUT)/PAYLOAD_CONTENTS.txt" '^target dsh-cluster$'
+    # In GitLab mode a cluster-only payload rides on a VM that already has the
+    # bundles, and the cluster clones from GitLab.
+    assert_absent "$(OUT)/lib-a.bundle"
+    assert_file_lacks "$(OUT)/PAYLOAD_CONTENTS.txt" '^file bundle '
+    assert_file_contains "$(OUT)/PAYLOAD_CONTENTS.txt" '^file conf dsh-kit.conf$'
+}
+
+test_bundle_mode_carries_bundles_to_the_cluster_too() {
+    # KIT_GITLAB defaults to no: the bundles are the cluster's only source.
     two_repo_project 'KIT_TARGETS=dsh-cluster'
 
     build
     assert_exit 0
     assert_file_contains "$(OUT)/PAYLOAD_CONTENTS.txt" '^target dsh-cluster$'
-    # A cluster-only payload rides on a VM that already has the bundles.
-    assert_absent "$(OUT)/lib-a.bundle"
-    assert_file_lacks "$(OUT)/PAYLOAD_CONTENTS.txt" '^file bundle '
-    assert_file_contains "$(OUT)/PAYLOAD_CONTENTS.txt" '^file conf dsh-kit.conf$'
+    assert_file_exists "$(OUT)/lib-a.bundle"
+    assert_file_exists "$(OUT)/app-b.bundle"
+    assert_file_contains "$(OUT)/PAYLOAD_CONTENTS.txt" '^file bundle lib-a.bundle$'
+    assert_file_contains "$(OUT)/PAYLOAD_CONTENTS.txt" '^file bundle MANIFEST.txt$'
+    assert_file_contains "$(OUT)/MANIFEST.txt" '^lib-a  .*  mirror$'
+    assert_file_contains "${FIX_ROOT}/run.out" 'GitLab  *no - every box installs from the bundles'
+}
+
+test_gitlab_mode_still_carries_bundles_for_the_vm() {
+    two_repo_project 'KIT_TARGETS=dsh-vm' 'KIT_GITLAB=yes' 'KIT_GITLAB_GROUP=grp'
+
+    build
+    assert_exit 0
+    assert_file_exists "$(OUT)/lib-a.bundle"
+    assert_file_contains "$(OUT)/PAYLOAD_CONTENTS.txt" '^file bundle MANIFEST.txt$'
 }
 
 test_a_pyproject_beside_the_conf_is_carried() {

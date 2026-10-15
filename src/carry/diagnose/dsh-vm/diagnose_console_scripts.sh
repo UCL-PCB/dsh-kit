@@ -207,8 +207,13 @@ fi
 
 hr "Verdict"
 if [ "$MIRROR_VERDICT" = "mismatch" ]; then
-    echo "  A workspace clone is not at the manifest SHA. That IS a mirror problem:"
-    echo "  re-run mirror_to_gitlab.sh --refresh, then install_packages.sh again."
+    if dsh_uses_gitlab; then
+        echo "  A workspace clone is not at the manifest SHA. That IS a mirror problem:"
+        echo "  re-run mirror_to_gitlab.sh --refresh, then install_packages.sh again."
+    else
+        echo "  A workspace clone is not at the manifest SHA. Re-run install_packages.sh -"
+        echo "  it refreshes from this payload's bundles - and read its drift check."
+    fi
     echo "  Everything below is downstream of it."
     exit 1
 fi

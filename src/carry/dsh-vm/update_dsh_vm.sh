@@ -1,14 +1,15 @@
 #!/bin/bash
 # INSIDE. Unpack, mirror --refresh and install in one pass, for a REFRESH of a VM
 # that is already set up - a new payload carrying newer bundles, nothing else
-# changed.
+# changed. The mirror step runs only when the payload's dsh-kit.conf says
+# KIT_GITLAB=yes; in bundle mode install_packages.sh reads the bundles directly.
 #
 # Driven by ~/dsh-kit.env (where things go on this machine) and by the payload's
 # own dsh-kit.conf (what the project is), so the same command works every trip and
 # no environment-specific path is ever typed at a prompt. update_dsh_vm.bat is the
 # double-clickable wrapper; this is where the logic lives.
 #
-#   bash ./update_dsh_vm.sh                 # unpack -> mirror --refresh -> install
+#   bash ./update_dsh_vm.sh                 # unpack -> [mirror --refresh] -> install
 #   bash ./update_dsh_vm.sh --skip unpack   # the zip is already unpacked
 #   bash ./update_dsh_vm.sh --dry-run       # print the three commands, run nothing
 #
@@ -64,6 +65,7 @@ usage() {
 Usage: bash ./update_dsh_vm.sh [options]
 
   --skip LIST     comma-separated steps not to run: unpack, mirror, install
+                  (mirror is skipped anyway when KIT_GITLAB=no in dsh-kit.conf)
   --dry-run       print the commands that would run, then stop
   --config FILE   read per-machine settings from FILE instead of ~/dsh-kit.env
 USAGE
@@ -103,8 +105,8 @@ KIT_WORKSPACE_DIR="/s/<share>/<workspace-dir>"
 #KIT_ZIP="/q/<username>/DSH_import.zip"        # unset = search Q:, $HOME, here, ~/Downloads
 #KIT_CLEAN_PATH="no"                           # yes if Anaconda shadows the venv's DLLs
 #KIT_PYTHON=""                                 # only needed on a first build
-#KIT_GITLAB_GROUP=""                           # override the conf's group on this machine
-#KIT_WORKING_NAMESPACE=""                      # override where working repos live
+#KIT_GITLAB_GROUP=""                           # GitLab mode: override the conf's group here
+#KIT_WORKING_NAMESPACE=""                      # GitLab mode: override where working repos live
 TEMPLATE
 }
 
@@ -137,7 +139,7 @@ printf '  %-16s %s\n' "workspace" "$WORKSPACE"
 printf '  %-16s %s\n' "payload"   "$PAYLOAD_DIR"
 [ -n "$ZIP" ]  && printf '  %-16s %s\n' "zip"      "$ZIP"
 [ -n "$SKIP" ] && printf '  %-16s %s\n' "skipping" "$SKIP"
-echo "  (repos, GitLab group and install mode come from the payload's dsh-kit.conf)"
+echo "  (repos, install mode and KIT_GITLAB come from the payload's dsh-kit.conf)"
 echo
 
 # Git walks up from the cwd statting every ancestor, and on this VM one of them
@@ -198,14 +200,25 @@ else
     run_step "1. Unpack + verify" "$HERE" "${unpack_args[@]}"
 fi
 
-# 2. --refresh, always: without it an existing clone is silently skipped, which is
+# 2. Only in GitLab mode, read from the payload just unpacked - in a subshell, so
+# loading the conf here changes nothing for the steps that follow. Empty when there
+# is no readable conf yet (a dry run before the first unpack): then the step is
+# shown, and mirror_to_gitlab.sh decides for itself when it runs.
+GITLAB_MODE="$( dsh_kit_settings "$PAYLOAD_DIR" >/dev/null 2>&1 \
+                && { dsh_uses_gitlab && echo yes || echo no; } )"
+
+# --refresh, always: without it an existing clone is silently skipped, which is
 # exactly how a stale mirror survives a run that reports success. A repo whose SHA
 # did not move pushes nothing and never reaches a protected-branch hook, so an
 # unchanged repo cannot be declined.
 if skipped mirror; then
     echo "=== 2. Mirror refresh (skipped) ==="
     echo
+elif [ "$GITLAB_MODE" = "no" ]; then
+    echo "=== 2. Mirror refresh (not used: KIT_GITLAB=no - install reads the bundles) ==="
+    echo
 else
+    [ -z "$GITLAB_MODE" ] && echo "  (no dsh-kit.conf in ${PAYLOAD_DIR} yet - runs only if it says KIT_GITLAB=yes)"
     run_step "2. Mirror refresh" "$PAYLOAD_DIR" ./mirror_to_gitlab.sh --refresh
 fi
 
@@ -224,17 +237,19 @@ if [ "$DRY" -eq 1 ]; then
     exit 0
 fi
 
+MIRROR_LOG=""
+[ "$GITLAB_MODE" = "no" ] || MIRROR_LOG="
+    ${PAYLOAD_DIR}/Logs/mirror_to_gitlab.log"
 cat <<EOF
 === Done ===
 
   Logs - this one beside this script, the rest in the payload's own Logs/:
     ${HERE}/Logs/update_dsh_vm.log
     ${PAYLOAD_DIR}/Logs/unpack_payload.log
-    ${PAYLOAD_DIR}/Logs/verify_payload.log
-    ${PAYLOAD_DIR}/Logs/mirror_to_gitlab.log
+    ${PAYLOAD_DIR}/Logs/verify_payload.log${MIRROR_LOG}
     ${PAYLOAD_DIR}/Logs/install_packages.log
 
-  The mirror checkpoint above prints a SHA per repo. They must match
+  The install checkpoint above prints a SHA per repo. They must match
   ${PAYLOAD_DIR}/MANIFEST.txt exactly, or a commit id does not mean the same
   thing on both sides of the airlock - which is the whole point of the bundles.
 

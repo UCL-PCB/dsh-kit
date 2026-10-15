@@ -43,21 +43,36 @@ OUTSIDE (your workstation)
                    + MANIFEST.txt        checksums, zip
                                                                                      │
 INSIDE — Desktop VM (Windows, Git Bash)                                              ▼
-  unpack_payload.sh ─► verify_payload.sh ─► probe_secure_env.sh ─► mirror_to_gitlab.sh
+  unpack_payload.sh ─► verify_payload.sh ─► probe_secure_env.sh ─► [mirror_to_gitlab.sh]
   ─► install_uv.sh ─► check_venv_location.sh ─► install_packages.sh ─► make_console_wrappers.sh
-                                                  (clones from GitLab-inside,      (only if the
-                                                   checks SHAs vs MANIFEST,         .exe launchers
-                                                   installs, smoke-tests)           fail on SMB)
-  every later trip:  update_dsh_vm.bat   (unpack ─► mirror --refresh ─► install)
+                                                  (clones from the bundles, or      (only if the
+                                                   from GitLab-inside; checks SHAs  .exe launchers
+                                                   vs MANIFEST, installs, tests)    fail on SMB)
+  every later trip:  update_dsh_vm.bat   (unpack ─► [mirror --refresh] ─► install)
                                                                                      │
 INSIDE — batch cluster (Linux), payload folder copied over by WinSCP                 ▼
   verify_payload.sh ─► probe_cluster.sh ─► install_uv.sh ─► install_packages.sh
   every later trip:  update_dsh_cluster.sh --check, then update_dsh_cluster.sh
-  optional:          probe_gitlab_install_route.sh ─► install_git_route.sh  (pinned git sources)
+  optional:          [probe_gitlab_install_route.sh ─► install_git_route.sh]  (pinned git sources)
+
+  [ ... ] = GitLab mode only (KIT_GITLAB="yes"). Skipped in bundle mode, the default.
 ```
 
 Every step writes `Logs/<script>.log` in the payload and ends with an explicit `PASS` or
 `FAIL` that says what to do next. Every common failure has a `diagnose/` script.
+
+## Bundles or GitLab
+
+Set by `KIT_GITLAB` (`docs/adr/0005-gitlab-is-optional.md`):
+
+- **`no`** (default, "bundle mode") — every box clones straight from the `.bundle` files in
+  the payload, and refreshes by fetching from the next payload's. No GitLab project, no DSH
+  credential, no mirror step. Right for one person.
+- **`yes`** — the VM mirrors the bundles into GitLab-inside and every box clones from there.
+  Worth the extra step if colleagues inside clone the same code, or for the cluster's pinned
+  git-sources route (`docs/git_install_route.md`).
+
+Either way the commit SHAs in `MANIFEST.txt` are asserted against every checkout.
 
 ## Plain venv or uv workspace
 
@@ -74,10 +89,10 @@ Set by `KIT_INSTALL_MODE` (`docs/adr/0004-venv-default-workspace-optional.md`):
 
 | Path | What |
 |---|---|
-| `dsh-kit.conf` | **your project**: which repos, in what order, how installed, which GitLab group. The only file you edit |
+| `dsh-kit.conf` | **your project**: which repos, in what order, how installed, bundles or GitLab. The only file you edit |
 | `dsh-kit.conf.example` | every key, documented |
 | `src/workstation/` | outside: `export_bundles.sh` (and `.ps1`), `build_payload.sh` (and `.bat`) |
-| `src/carry/any/` | carried to both boxes: `install_packages.sh`, `install_uv.sh`, `probe_gitlab_install_route.sh`, `lib/` |
+| `src/carry/any/` | carried to both boxes: `install_packages.sh`, `install_uv.sh`, `rescue_local_edits.sh`, `probe_gitlab_install_route.sh`, `lib/` |
 | `src/carry/dsh-vm/` | carried to the VM: unpack, verify, probe, mirror, venv-location check, wrappers, refresh, `RUNBOOK.md` |
 | `src/carry/dsh-cluster/` | carried to the cluster: probe, refresh, the git install route |
 | `src/carry/diagnose/` | one script per failure already met: DLLs, git permissions, GitLab TLS, push rejections, console scripts |

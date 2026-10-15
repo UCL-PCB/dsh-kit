@@ -1,5 +1,5 @@
 #!/bin/bash
-# INSIDE. A refresh (mirror or install) dies because a checkout was EDITED here.
+# INSIDE (both boxes). A refresh (mirror or install) dies because a checkout was EDITED here.
 #
 # Symptom this exists for: the VM was set up, the code was used, and now a refresh
 # stops. Nobody has to type a git command for this to happen: a notebook tool that
@@ -8,7 +8,7 @@
 #
 # It surfaces in one of two places, and NEITHER message says "you have local edits":
 #
-#   mirror_to_gitlab.sh --refresh, in ~/DSH_import/<repo>:
+#   mirror_to_gitlab.sh --refresh, in ~/DSH_import/<repo> (GitLab mode only):
 #       error: Your local changes to the following files would be overwritten by
 #       checkout: ...
 #     ...from the `git checkout "$branch"` that follows the detach. That script is
@@ -17,10 +17,10 @@
 #
 #   install_packages.sh, in <workspace>/src/<repo>:
 #       <pkg>: pull --ff-only FAILED - this clone is NOT being updated
-#     then "RESULT: FAIL - what is checked out is not what this payload carries",
-#     whose three suggested causes are stale GitLab, missing project, and diverged
-#     clone. A dirty working tree is none of those, so following them wastes a
-#     trip; suggestion 3, "delete <pkg> and re-run", DESTROYS the edits.
+#     (GitLab mode), or "has local edits to tracked files" / "cannot fast-forward
+#     to the payload's <branch>" (bundle mode), then "RESULT: FAIL - what is
+#     checked out is not what this payload carries". Its last suggestion, "delete
+#     <repo> and re-run", DESTROYS the edits.
 #
 # That last point is why this script exists rather than a `git checkout -- .`:
 # nothing edited on this VM can be recovered from outside it. So the edits are
@@ -57,7 +57,7 @@ fi
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# shellcheck source=../any/lib/dsh_log.sh
+# shellcheck source=lib/dsh_log.sh
 . "${SELF_DIR}/lib/dsh_log.sh"
 dsh_start_log "$@"
 
@@ -93,7 +93,7 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-# shellcheck source=../any/lib/dsh_platform.sh
+# shellcheck source=lib/dsh_platform.sh
 . "${SELF_DIR}/lib/dsh_platform.sh"
 # Every check below is a git command, and on this VM they all fail as "permission
 # denied" until the ceiling is set - which would read here as "not a git repo".
@@ -106,6 +106,24 @@ if [ -z "$WORKSPACE" ]; then
 fi
 
 [ -d "$PAYLOAD_DIR" ] && PAYLOAD_DIR="$(cd "$PAYLOAD_DIR" && pwd)"
+
+# GitLab or bundle mode, from the payload's dsh-kit.conf. Only decides which copies
+# exist and what the advice at the end says; the rescue itself is the same. With
+# no readable conf, both kinds of copy are looked at.
+USE_GITLAB="unknown"
+KIT_GITLAB=""
+if [ -f "${PAYLOAD_DIR}/dsh-kit.conf" ]; then
+    _ws="$WORKSPACE"
+    if dsh_kit_settings "$PAYLOAD_DIR" >/dev/null 2>&1; then
+        if dsh_uses_gitlab; then USE_GITLAB="yes"; else USE_GITLAB="no"; fi
+    fi
+    WORKSPACE="$_ws"
+    # The same default install_packages.sh uses on Linux, so the cluster's
+    # workspace is checked without --workspace.
+    if [ -z "$WORKSPACE" ] && [ "$DSH_OS" = "linux" ] && [ -n "${KIT_PROJECT:-}" ]; then
+        WORKSPACE="${HOME}/Scratch/${KIT_PROJECT}"
+    fi
+fi
 
 # One stamp for the whole run, so every branch this parks work on is named for the
 # same rescue and they can be found together.
@@ -140,7 +158,7 @@ PARKED=0
 # ---------------------------------------------------------------------------
 examine() {
     local label="$1" dir="$2" branch="$3" role="${4:-mirror}"
-    local head_desc dirty untracked ahead target unpushed
+    local head_desc dirty untracked ahead target unpushed upstream
 
     if [ ! -d "$dir" ]; then
         printf '  %-38s -\n' "$label"
@@ -161,9 +179,18 @@ examine() {
 
     dirty="$(git -C "$dir" status --porcelain --untracked-files=no)"
     untracked="$(git -C "$dir" status --porcelain --untracked-files=normal | grep -c '^??' || true)"
+    # What the payload last delivered for this branch: origin/<branch> in a GitLab
+    # clone, refs/outside/<branch> in a clone fed from bundles (install_packages.sh
+    # fetches there, and a bundle clone keeps no origin).
     ahead=0
+    upstream=""
     if git -C "$dir" rev-parse --quiet --verify "refs/remotes/origin/${branch}" > /dev/null 2>&1; then
-        ahead="$(git -C "$dir" rev-list --count "origin/${branch}..HEAD" 2>/dev/null || echo 0)"
+        upstream="origin/${branch}"
+    elif git -C "$dir" rev-parse --quiet --verify "refs/outside/${branch}" > /dev/null 2>&1; then
+        upstream="refs/outside/${branch}"
+    fi
+    if [ -n "$upstream" ]; then
+        ahead="$(git -C "$dir" rev-list --count "${upstream}..HEAD" 2>/dev/null || echo 0)"
     fi
 
     if [ -z "$dirty" ] && [ "$ahead" = "0" ] && [ "$head_desc" = "$branch" ]; then
@@ -188,9 +215,13 @@ examine() {
         # so measuring it against the mirror branch counts the wrong thing. What
         # matters is commits that exist on this disk and nowhere else - HEAD minus
         # everything origin already has, whichever branch holds it.
-        unpushed="$(git -C "$dir" rev-list --count HEAD --not --remotes=origin 2>/dev/null || echo 0)"
+        if [ "$upstream" = "origin/${branch}" ]; then
+            unpushed="$(git -C "$dir" rev-list --count HEAD --not --remotes=origin 2>/dev/null || echo 0)"
+        else
+            unpushed="$(git -C "$dir" rev-list --count HEAD --not --glob='refs/outside/*' 2>/dev/null || echo 0)"
+        fi
         if [ "$unpushed" != "0" ]; then
-            printf '      %-18s %s commit(s) exist only on this VM\n' "not on GitLab" "$unpushed"
+            printf '      %-18s %s commit(s) exist only on this VM\n' "not from outside" "$unpushed"
             printf '      %s\n' "and only on this disk - nothing pushes them anywhere by design."
         fi
         echo
@@ -201,7 +232,7 @@ examine() {
     printf '  %-38s BLOCKS THE REFRESH\n' "$label"
     printf '      %-18s %s\n' "HEAD" "$head_desc"
     printf '      %-18s %s\n' "payload wants" "$branch"
-    printf '      %-18s %s commit(s)\n' "ahead of origin" "$ahead"
+    printf '      %-18s %s commit(s)\n' "ahead of payload" "$ahead"
     if [ -n "$dirty" ]; then
         echo "      modified tracked files:"
         printf '%s\n' "$dirty" | sed 's/^/        /'
@@ -269,8 +300,8 @@ COMMITMSG
     # -----------------------------------------------------------------------
     # Restore the tracked branch to what the payload carries.
     # -----------------------------------------------------------------------
-    if git -C "$dir" rev-parse --quiet --verify "refs/remotes/origin/${branch}" > /dev/null 2>&1; then
-        target="origin/${branch}"
+    if [ -n "$upstream" ]; then
+        target="$upstream"
     elif git -C "$dir" rev-parse --quiet --verify "refs/heads/${branch}" > /dev/null 2>&1; then
         # The payload-directory mirror clone has no useful origin - it is fed from
         # the bundle, not fetched. Its own branch ref is the right target;
@@ -298,6 +329,9 @@ COMMITMSG
 # different steps, so checking one and declaring victory is how the second one is
 # met an hour later.
 # ---------------------------------------------------------------------------
+# In bundle mode (KIT_GITLAB=no) there are no payload-directory clones - nothing
+# mirrors to GitLab - so only the workspace copy is looked at.
+if [ "$USE_GITLAB" != "no" ]; then
 echo "=== Mirror clones, beside the payload (mirror_to_gitlab.sh reads these) ==="
 while read -r pkg branch sha role; do
     case "$pkg" in ''|'#'*) continue ;; esac
@@ -307,6 +341,7 @@ while read -r pkg branch sha role; do
     examine "$pkg" "${PAYLOAD_DIR}/${pkg}" "$branch" mirror
 done < "$MANIFEST"
 echo
+fi
 
 if [ -n "$WORKSPACE" ]; then
     echo "=== Workspace clones, in ${WORKSPACE}/src (install_packages.sh reads these) ==="
@@ -330,8 +365,13 @@ if [ "$BLOCKED" -eq 0 ]; then
     echo "  PASS - nothing found here blocks a refresh."
     echo
     echo "  So the failure is something else. Take install_packages.log's own"
-    echo "  causes in its order: GitLab not refreshed from THIS payload, the GitLab"
-    echo "  project missing, or a clone that has genuinely diverged."
+    if [ "$USE_GITLAB" = "no" ]; then
+        echo "  causes in its order: a bundle missing from this payload (./verify_payload.sh),"
+        echo "  or a repo that was never carried in at all."
+    else
+        echo "  causes in its order: GitLab not refreshed from THIS payload, the GitLab"
+        echo "  project missing, or a clone that has genuinely diverged."
+    fi
     exit 0
 fi
 

@@ -97,11 +97,13 @@ strips CRLF and runs it.
 
 Short one-liners under the threshold can still be given directly.
 
-## Nothing is destructive until the mirror
+## Nothing is destructive until the mirror (or the install)
 
-Unpack, verify and probe are read-only. `mirror_to_gitlab.sh` pushes to GitLab and is the
-first thing that changes state on the far side. Say so when handing it over, and confirm the
-`--refresh` question (see `desktop-vm.md`) before it runs, not after.
+Unpack, verify and probe are read-only. In GitLab mode `mirror_to_gitlab.sh` pushes to GitLab
+and is the first thing that changes state on the far side. Say so when handing it over, and
+confirm the `--refresh` question (see `desktop-vm.md`) before it runs, not after. In bundle
+mode there is no mirror; the first state change is `install_packages.sh` writing the
+workspace, which touches nothing shared.
 
 ## Sessions expire underneath you
 

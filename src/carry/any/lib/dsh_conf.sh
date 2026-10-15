@@ -11,12 +11,12 @@
 #
 # After dsh_load_conf, these are always set (possibly empty):
 #   KIT_PROJECT KIT_REPOS KIT_REPOS_DIR KIT_WORKING_REPOS KIT_INSTALL_MODE KIT_EXTRAS
-#   KIT_PYTHON_SPEC KIT_IMPORT_CHECK KIT_CONSOLE_SCRIPTS KIT_GITLAB_HOST
+#   KIT_PYTHON_SPEC KIT_IMPORT_CHECK KIT_CONSOLE_SCRIPTS KIT_GITLAB KIT_GITLAB_HOST
 #   KIT_GITLAB_GROUP KIT_WORKING_NAMESPACE KIT_TARGETS
 # and KIT_CONF_DIR is the directory the conf was read from.
 
 DSH_CONF_KEYS="KIT_PROJECT KIT_REPOS KIT_REPOS_DIR KIT_WORKING_REPOS KIT_INSTALL_MODE
-KIT_EXTRAS KIT_PYTHON_SPEC KIT_IMPORT_CHECK KIT_CONSOLE_SCRIPTS KIT_GITLAB_HOST
+KIT_EXTRAS KIT_PYTHON_SPEC KIT_IMPORT_CHECK KIT_CONSOLE_SCRIPTS KIT_GITLAB KIT_GITLAB_HOST
 KIT_GITLAB_GROUP KIT_WORKING_NAMESPACE KIT_TARGETS"
 
 dsh_find_conf() {
@@ -51,6 +51,7 @@ dsh_load_conf() {
     : "${KIT_PROJECT:=dsh-project}"
     : "${KIT_REPOS_DIR:=../}"
     : "${KIT_INSTALL_MODE:=venv}"
+    : "${KIT_GITLAB:=no}"
     : "${KIT_GITLAB_HOST:=gitlab.idhs.ucl.ac.uk}"
     : "${KIT_TARGETS:=dsh-vm}"
     : "${KIT_WORKING_REPOS:=}" "${KIT_EXTRAS:=}" "${KIT_PYTHON_SPEC:=}" "${KIT_GITLAB_GROUP:=}"
@@ -69,6 +70,13 @@ dsh_check_conf() {
     case "$KIT_INSTALL_MODE" in venv|workspace) ;; *)
         echo "dsh-kit.conf: KIT_INSTALL_MODE must be venv or workspace, not '${KIT_INSTALL_MODE}'" >&2; bad=1 ;;
     esac
+    case "$KIT_GITLAB" in
+        no) ;;
+        yes) case "$KIT_GITLAB_GROUP" in ''|'<'*'>')
+                echo "dsh-kit.conf: KIT_GITLAB is yes but KIT_GITLAB_GROUP is not filled in" >&2; bad=1 ;;
+             esac ;;
+        *) echo "dsh-kit.conf: KIT_GITLAB must be yes or no, not '${KIT_GITLAB}'" >&2; bad=1 ;;
+    esac
     for r in $KIT_WORKING_REPOS; do
         case " $KIT_REPOS " in *" $r "*) ;; *)
             echo "dsh-kit.conf: KIT_WORKING_REPOS names ${r}, which is not in KIT_REPOS" >&2; bad=1 ;;
@@ -80,6 +88,11 @@ dsh_check_conf() {
         esac
     done
     return "$bad"
+}
+
+# dsh_uses_gitlab  - true if the conf routes the repos through GitLab inside.
+dsh_uses_gitlab() {
+    [ "${KIT_GITLAB:-no}" = "yes" ]
 }
 
 # dsh_is_working_repo <name>  - true if the conf marks it as edited inside.

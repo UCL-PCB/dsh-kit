@@ -1,10 +1,10 @@
 #!/bin/bash
-# INSIDE (both boxes). Clone the project's repos from GitLab, install them into one
-# .venv, and prove they import.
+# INSIDE (both boxes). Clone the project's repos - from the payload's bundles, or
+# from GitLab - install them into one .venv, and prove they import.
 #
 #   ./install_packages.sh                                  # everything from the conf
 #   ./install_packages.sh --workspace <workspace-dir> --python <full-path-to-python>
-#   ./install_packages.sh --gitlab <host> --group <group>  # override the conf
+#   ./install_packages.sh --gitlab <host> --group <group>  # GitLab mode: override the conf
 #
 # What to clone and how to install it comes from dsh-kit.conf beside this script
 # (KIT_REPOS, KIT_INSTALL_MODE, KIT_EXTRAS, KIT_IMPORT_CHECK, KIT_CONSOLE_SCRIPTS,
@@ -12,8 +12,16 @@
 # (KIT_WORKSPACE_DIR, KIT_PYTHON, KIT_CLEAN_PATH) - see dsh_platform.sh. A flag
 # beats both.
 #
-# Clones from GitLab rather than from the bundles on purpose: this proves the
-# mirror is usable, which is what everyone inside will actually clone from.
+# Where the repos come from is KIT_GITLAB in the conf:
+#
+#   no   (bundle mode, the default) cloned straight from <repo>.bundle in this
+#        payload. The clone keeps no remote - the payload directory is replaced by
+#        the next one - so a refresh fetches the branch from the CURRENT payload's
+#        bundle and fast-forwards to it. A mirror with local edits, or one that
+#        cannot fast-forward, stops the run (see rescue_local_edits.sh).
+#   yes  cloned from GitLab rather than from the bundles on purpose: this proves
+#        the mirror is usable, which is what everyone inside will clone from.
+#        Refreshed with git pull --ff-only.
 #
 # Two install modes, KIT_INSTALL_MODE in the conf:
 #
@@ -30,9 +38,9 @@
 # - see check_venv_location.sh - so this refuses to guess. On Linux it defaults
 # to ~/Scratch/<KIT_PROJECT>.
 #
-# Sets git's credential helper to `cache --timeout=120` if none is configured,
-# so the clones ask once rather than once per repo per fetch. In memory only;
-# nothing is written to disk. An existing helper is left alone.
+# GitLab mode only: sets git's credential helper to `cache --timeout=120` if none
+# is configured, so the clones ask once rather than once per repo per fetch. In
+# memory only; nothing is written to disk. An existing helper is left alone.
 #
 # --clean-path drops everything except Windows, git and uv out of PATH for the
 # install and the smoke test. Use it if check_venv_location.sh showed Anaconda
@@ -67,7 +75,7 @@ fi
 PAYLOAD_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib/dsh_platform.sh
 . "${PAYLOAD_DIR}/lib/dsh_platform.sh"
-# This clones from GitLab; git has to be able to run here first.
+# This clones; git has to be able to run here first.
 dsh_git_guard || exit 1
 
 # Log to a file AND to the terminal, reliably. `exec > >(tee f)` loses the tail
@@ -98,10 +106,13 @@ usage() {
     echo "  --python PATH      full path to the interpreter from the probe; only needed"
     echo "                     the first time, uv records it in .venv"
     echo "  --clean-path       strip Anaconda and everything else out of PATH"
-    echo "  --gitlab HOST      default from the conf: ${KIT_GITLAB_HOST}"
-    echo "  --group GROUP      default from the conf: ${KIT_GITLAB_GROUP}"
-    echo "  --working-namespace NS  where the working repos are cloned from"
-    echo "                     (default: KIT_WORKING_NAMESPACE, or the group)"
+    echo "  --gitlab HOST      GitLab mode only; default from the conf: ${KIT_GITLAB_HOST}"
+    echo "  --group GROUP      GitLab mode only; default from the conf: ${KIT_GITLAB_GROUP}"
+    echo "  --working-namespace NS  GitLab mode only: where the working repos are cloned"
+    echo "                     from (default: KIT_WORKING_NAMESPACE, or the group)"
+    echo
+    echo "  KIT_GITLAB=${KIT_GITLAB} in dsh-kit.conf: no clones from the payload's bundles,"
+    echo "  yes from GitLab."
     echo "  --all-extras       workspace mode only: uv sync --all-extras as well"
     exit 1
 }
@@ -128,17 +139,25 @@ MODULES=($KIT_IMPORT_CHECK)
 CONSOLE_SCRIPTS=($KIT_CONSOLE_SCRIPTS)
 MODE="$KIT_INSTALL_MODE"
 
-[ -n "$GITLAB_HOST" ] || { echo "Error: no GitLab host - set KIT_GITLAB_HOST or pass --gitlab" >&2; usage; }
-[ -n "$GROUP" ]       || { echo "Error: no GitLab group - set KIT_GITLAB_GROUP or pass --group" >&2; usage; }
-dsh_no_placeholder "KIT_GITLAB_GROUP" "$GROUP" || exit 1
 dsh_no_placeholder "KIT_WORKSPACE_DIR" "$WORKSPACE" || exit 1
 
-# Publish host / group / working namespace for dsh_repo_remote, which reads them
-# from the environment so that one function assembles every URL in every carried
-# script. NS_ARG is the flag to repeat on the commands this script suggests
-# running next; empty when both namespaces are the same.
-dsh_gitlab_env "$GITLAB_HOST" "$GROUP" "$WORKING_NAMESPACE"
-NS_ARG="$(dsh_working_ns_arg)"
+NS_ARG=""
+if dsh_uses_gitlab; then
+    SOURCE="gitlab"
+    [ -n "$GITLAB_HOST" ] || { echo "Error: no GitLab host - set KIT_GITLAB_HOST or pass --gitlab" >&2; usage; }
+    [ -n "$GROUP" ]       || { echo "Error: no GitLab group - set KIT_GITLAB_GROUP or pass --group" >&2; usage; }
+    dsh_no_placeholder "KIT_GITLAB_GROUP" "$GROUP" || exit 1
+
+    # Publish host / group / working namespace for dsh_repo_remote, which reads
+    # them from the environment so that one function assembles every URL in every
+    # carried script. NS_ARG is the flag to repeat on the commands this script
+    # suggests running next; empty when both namespaces are the same.
+    dsh_gitlab_env "$GITLAB_HOST" "$GROUP" "$WORKING_NAMESPACE"
+    NS_ARG="$(dsh_working_ns_arg)"
+else
+    # Bundle mode: --gitlab / --group / --working-namespace are accepted and ignored.
+    SOURCE="bundles"
+fi
 
 if [ -z "$WORKSPACE" ]; then
     if [ "$DSH_OS" = "windows" ]; then
@@ -174,6 +193,7 @@ printf '  %-16s %s\n' "project"   "$KIT_PROJECT"
 printf '  %-16s %s\n' "platform"  "$DSH_OS"
 printf '  %-16s %s\n' "repos"     "${PACKAGES[*]}"
 printf '  %-16s %s\n' "mode"      "$MODE"
+printf '  %-16s %s\n' "source"    "$SOURCE  (KIT_GITLAB=${KIT_GITLAB})"
 printf '  %-16s %s\n' "extras"    "${KIT_EXTRAS:-(none)}"
 printf '  %-16s %s\n' "workspace" "$WORKSPACE"
 printf '  %-16s %s\n' "uv"        "$UV ($("$UV" --version 2>&1))"
@@ -188,18 +208,22 @@ echo
 #
 # Only set it if nothing is configured: an operator who has already chosen a
 # helper (or a keyring) should keep it.
-echo "=== git credential helper ==="
-if [ -n "$(git config --global --get credential.helper 2>/dev/null)" ]; then
-    printf '  %s\n' "already set to: $(git config --global --get credential.helper)  - left alone"
-elif ! git help -a 2>/dev/null | grep -q credential-cache; then
-    printf '  %s\n' "git-credential-cache not available here - expect one prompt per clone"
-else
-    git config --global credential.helper 'cache --timeout=120'
-    printf '  %s\n' "set to: cache --timeout=120  (in memory, 2 minutes, never written to disk)"
-    printf '  %s\n' "clear it early with:  git credential-cache exit"
-    printf '  %s\n' "undo with:            git config --global --unset credential.helper"
+#
+# Bundle mode skips all of it: every clone and fetch reads a local file.
+if [ "$SOURCE" = "gitlab" ]; then
+    echo "=== git credential helper ==="
+    if [ -n "$(git config --global --get credential.helper 2>/dev/null)" ]; then
+        printf '  %s\n' "already set to: $(git config --global --get credential.helper)  - left alone"
+    elif ! git help -a 2>/dev/null | grep -q credential-cache; then
+        printf '  %s\n' "git-credential-cache not available here - expect one prompt per clone"
+    else
+        git config --global credential.helper 'cache --timeout=120'
+        printf '  %s\n' "set to: cache --timeout=120  (in memory, 2 minutes, never written to disk)"
+        printf '  %s\n' "clear it early with:  git credential-cache exit"
+        printf '  %s\n' "undo with:            git config --global --unset credential.helper"
+    fi
+    echo
 fi
-echo
 
 MANIFEST="${PAYLOAD_DIR}/MANIFEST.txt"
 if [ ! -s "$MANIFEST" ]; then
@@ -227,10 +251,15 @@ STALE_PULL=0
 WORKING_REPOS=""
 WORKING_PARKED=""
 WORKING_OVERWRITE_FAILED=""
-echo "=== Cloning from GitLab into ${WORKSPACE}/src ==="
-echo "  from $(dirname "$(dsh_repo_remote "${PACKAGES[0]}")")/"
-if [ -n "$NS_ARG" ] && [ -n "$KIT_WORKING_REPOS" ]; then
-    echo "  working repos (${KIT_WORKING_REPOS}) from namespace ${WORKING_NAMESPACE} instead"
+if [ "$SOURCE" = "gitlab" ]; then
+    echo "=== Cloning from GitLab into ${WORKSPACE}/src ==="
+    echo "  from $(dirname "$(dsh_repo_remote "${PACKAGES[0]}")")/"
+    if [ -n "$NS_ARG" ] && [ -n "$KIT_WORKING_REPOS" ]; then
+        echo "  working repos (${KIT_WORKING_REPOS}) from namespace ${WORKING_NAMESPACE} instead"
+    fi
+else
+    echo "=== Cloning from the payload's bundles into ${WORKSPACE}/src ==="
+    echo "  from ${PAYLOAD_DIR}/<repo>.bundle"
 fi
 mkdir -p "${WORKSPACE}/src" || { echo "Error: cannot create ${WORKSPACE}/src" >&2; exit 1; }
 for pkg in "${PACKAGES[@]}"; do
@@ -248,6 +277,33 @@ for pkg in "${PACKAGES[@]}"; do
     role="$(manifest_role "$pkg")"
     [ -n "$role" ] || role="mirror"
     [ "$role" = "working" ] && WORKING_REPOS="${WORKING_REPOS} ${pkg}"
+
+    if [ ! -d "${dir}/.git" ] && [ "$SOURCE" = "bundles" ]; then
+        bundle="${PAYLOAD_DIR}/${pkg}.bundle"
+        mbranch="$(manifest_branch "$pkg")"
+        if [ ! -f "$bundle" ]; then
+            printf '  %-26s in MANIFEST.txt but %s.bundle is not in the payload - NOT INSTALLABLE\n' "$pkg" "$pkg"
+            STALE_PULL=1
+            continue
+        fi
+        # --branch so the checkout is on the manifest's branch, not whatever the
+        # bundle's HEAD happened to be. The origin a clone records would point into
+        # THIS payload directory, which the next payload replaces - so it is
+        # removed, and every refresh names the current payload's bundle instead.
+        git clone -q --branch "$mbranch" "$bundle" "$dir" || {
+            echo "Error: clone of ${pkg} from ${bundle} failed." >&2
+            echo "  'failed to stat' / permission denied" >&2
+            echo "      -> ./diagnose/diagnose_git_permissions.sh" >&2
+            echo "  'not a valid bundle' / 'does not look like a v2 bundle'" >&2
+            echo "      -> the bundle was damaged on the way in: ./verify_payload.sh" >&2
+            echo "  'Remote branch ... not found'" >&2
+            echo "      -> MANIFEST.txt names a branch the bundle does not carry; re-export" >&2
+            exit 1
+        }
+        git -C "$dir" remote remove origin 2>/dev/null || true
+        printf '  %-26s cloned from bundle at %s  (%s)\n' "$pkg" "$(git -C "$dir" rev-parse --short HEAD)" "$role"
+        continue
+    fi
 
     if [ ! -d "${dir}/.git" ]; then
         git clone "$(dsh_repo_remote "$pkg")" "$dir" || {
@@ -335,6 +391,44 @@ To take a file back:  git checkout ${park} -- <path>" || parked=0
         continue
     fi
 
+    if [ "$SOURCE" = "bundles" ]; then
+        # A mirror refreshed from the bundle: fetch the manifest's branch, then
+        # fast-forward to it and nothing else. A tracked edit is refused outright -
+        # a fast-forward can carry one along silently, and a mirror is read-only.
+        bundle="${PAYLOAD_DIR}/${pkg}.bundle"
+        mbranch="$(manifest_branch "$pkg")"
+        if [ ! -f "$bundle" ]; then
+            echo "  ${pkg}: in MANIFEST.txt but ${pkg}.bundle is not in the payload." >&2
+            STALE_PULL=1
+            continue
+        fi
+        if [ -n "$(git -C "$dir" status --porcelain --untracked-files=no)" ]; then
+            echo "  ${pkg}: has local edits to tracked files - this mirror is NOT being updated." >&2
+            git -C "$dir" status --short --untracked-files=no | sed 's/^/    /' >&2
+            STALE_PULL=1
+            continue
+        fi
+        if ! git -C "$dir" fetch -q --force "$bundle" "refs/heads/${mbranch}:refs/outside/${mbranch}"; then
+            echo "  ${pkg}: could not read ${pkg}.bundle - this mirror is NOT being updated." >&2
+            STALE_PULL=1
+            continue
+        fi
+        cur="$(git -C "$dir" symbolic-ref --quiet --short HEAD || echo "")"
+        if [ "$cur" != "$mbranch" ]; then
+            if git -C "$dir" rev-parse -q --verify "refs/heads/${mbranch}" >/dev/null; then
+                git -C "$dir" checkout -q "$mbranch"
+            else
+                git -C "$dir" checkout -q -b "$mbranch" "refs/outside/${mbranch}"
+            fi
+        fi
+        if ! git -C "$dir" merge -q --ff-only "refs/outside/${mbranch}" 2>&1 | sed 's/^/    /'; then
+            echo "  ${pkg}: cannot fast-forward to the payload's ${mbranch} - this mirror is NOT being updated." >&2
+            STALE_PULL=1
+        fi
+        printf '  %-26s refreshed from bundle, now at %s\n' "$pkg" "$(git -C "$dir" rev-parse --short HEAD)"
+        continue
+    fi
+
     git -C "$dir" fetch origin --prune --tags 2>&1 | sed 's/^/    /'
     if ! git -C "$dir" pull --ff-only 2>&1 | sed 's/^/    /'; then
         echo "  ${pkg}: pull --ff-only FAILED - this clone is NOT being updated." >&2
@@ -364,6 +458,18 @@ if [ "$DRIFT" -ne 0 ] || [ "$STALE_PULL" -ne 0 ]; then
     echo "RESULT: FAIL - what is checked out is not what this payload carries." >&2
     echo "  Stopping rather than installing code the manifest does not describe." >&2
     echo >&2
+    if [ "$SOURCE" = "bundles" ]; then
+    echo "  Most likely, in this order:" >&2
+    echo "  1. A mirror has local edits, or commits the payload does not have, so it" >&2
+    echo "     could not fast-forward (the lines above say which). Park the work and" >&2
+    echo "     restore the checkout:  ./rescue_local_edits.sh --rescue --repo <repo>" >&2
+    echo "  2. A repo in MANIFEST.txt has no bundle in this payload. Re-run" >&2
+    echo "     ./verify_payload.sh - the payload is incomplete; rebuild it outside." >&2
+    echo "  3. A repo in KIT_REPOS was never in any payload. Export it outside and" >&2
+    echo "     carry it in." >&2
+    echo "  4. Nothing else works: delete ${WORKSPACE}/src/<repo> and re-run; it is" >&2
+    echo "     re-cloned from the bundle." >&2
+    else
     echo "  Most likely, in this order:" >&2
     echo "  1. GitLab has not been refreshed from THIS payload. Re-run the mirror:" >&2
     echo "       ./mirror_to_gitlab.sh --refresh --gitlab ${GITLAB_HOST} --group ${GROUP}${NS_ARG}" >&2
@@ -374,6 +480,7 @@ if [ "$DRIFT" -ne 0 ] || [ "$STALE_PULL" -ne 0 ]; then
     echo "     ${WORKSPACE}/src/<repo> and re-run; it will be re-cloned." >&2
     echo "  4. A repo in KIT_REPOS was never in any payload. Export it outside and" >&2
     echo "     carry it in." >&2
+    fi
     echo >&2
     echo "  Note these are all MIRROR repos - read-only inside. If one of them has" >&2
     echo "  local edits, that is a fault rather than work, but it is still work" >&2

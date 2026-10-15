@@ -12,7 +12,7 @@ Split every config by what it describes:
 
 | Describes | Examples | How it gets there |
 |---|---|---|
-| **The project** | `dsh-kit.conf` — which repos, which extras, venv or workspace, which GitLab group; your own analysis parameters | Carried in the payload. It is the same project on either box. |
+| **The project** | `dsh-kit.conf` — which repos, which extras, venv or workspace, bundles or GitLab (and which group); your own analysis parameters | Carried in the payload. It is the same project on either box. |
 | **The machine** | `~/dsh-kit.env` — workspace dir, python path, payload dir; the workspace root `pyproject.toml`; `uv.toml`; anything holding an absolute path or a credential | **Written on the target.** Never carried. |
 
 dsh-kit already keeps to this: `dsh-kit.conf` holds no path that means anything inside,

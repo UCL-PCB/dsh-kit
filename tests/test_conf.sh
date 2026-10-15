@@ -139,6 +139,48 @@ test_an_unknown_target_fails() {
     assert_file_contains "${FIX_ROOT}/load.err" "unknown target 'other-hpc'"
 }
 
+test_gitlab_defaults_to_no() {
+    printf 'KIT_REPOS="lib-a"\n' > "$FIX_CONF"
+    load_conf KIT_GITLAB
+    assert_equals 0 "$LOAD_EXIT" "exit status"
+    assert_equals "no" "$(value_of KIT_GITLAB)" "KIT_GITLAB"
+}
+
+test_gitlab_yes_with_a_group_loads() {
+    printf 'KIT_REPOS="lib-a"\nKIT_GITLAB="yes"\nKIT_GITLAB_GROUP="grp"\n' > "$FIX_CONF"
+    load_conf KIT_GITLAB KIT_GITLAB_GROUP
+    assert_equals 0 "$LOAD_EXIT" "exit status"
+    assert_equals "yes" "$(value_of KIT_GITLAB)" "KIT_GITLAB"
+}
+
+test_a_bad_gitlab_value_fails() {
+    printf 'KIT_REPOS="lib-a"\nKIT_GITLAB="true"\n' > "$FIX_CONF"
+    load_conf
+    assert_equals 1 "$LOAD_EXIT" "exit status"
+    assert_file_contains "${FIX_ROOT}/load.err" "KIT_GITLAB must be yes or no, not 'true'"
+}
+
+test_gitlab_yes_without_a_group_fails() {
+    printf 'KIT_REPOS="lib-a"\nKIT_GITLAB="yes"\n' > "$FIX_CONF"
+    load_conf
+    assert_equals 1 "$LOAD_EXIT" "exit status"
+    assert_file_contains "${FIX_ROOT}/load.err" 'KIT_GITLAB is yes but KIT_GITLAB_GROUP is not filled in'
+}
+
+test_gitlab_yes_with_a_placeholder_group_fails() {
+    printf 'KIT_REPOS="lib-a"\nKIT_GITLAB="yes"\nKIT_GITLAB_GROUP="<gitlab-group>"\n' > "$FIX_CONF"
+    load_conf
+    assert_equals 1 "$LOAD_EXIT" "exit status"
+    assert_file_contains "${FIX_ROOT}/load.err" 'KIT_GITLAB_GROUP is not filled in'
+}
+
+test_gitlab_no_ignores_a_placeholder_group() {
+    # The shipped example leaves the group as a placeholder; bundle mode never reads it.
+    printf 'KIT_REPOS="lib-a"\nKIT_GITLAB="no"\nKIT_GITLAB_GROUP="<gitlab-group>"\n' > "$FIX_CONF"
+    load_conf
+    assert_equals 0 "$LOAD_EXIT" "exit status"
+}
+
 test_a_missing_conf_fails() {
     load_conf
     assert_equals 1 "$LOAD_EXIT" "exit status"

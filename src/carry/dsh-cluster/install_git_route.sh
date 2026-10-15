@@ -49,6 +49,7 @@ dsh_start_log "$@"
 # shellcheck source=../any/lib/dsh_platform.sh
 . "${PAYLOAD_DIR}/lib/dsh_platform.sh"
 dsh_kit_settings "$PAYLOAD_DIR" || exit 1
+dsh_gitlab_only "$(basename "$0")" || exit 0
 
 WORKSPACE=""
 GROUP="$KIT_GITLAB_GROUP"

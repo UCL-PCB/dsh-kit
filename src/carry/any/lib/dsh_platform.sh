@@ -214,6 +214,21 @@ dsh_kit_settings() {
     : "${KIT_CLEAN_PATH:=no}"
 }
 
+# dsh_gitlab_only <script name>  - for a script that only means anything when the
+# repos go through GitLab. Call it right after dsh_kit_settings:
+#
+#   dsh_gitlab_only "$(basename "$0")" || exit 0
+#
+# In bundle mode (KIT_GITLAB=no) it says so in one line and returns 1, and the
+# script exits 0: nothing is wrong, there is just nothing for it to do. The
+# GitLab-only scripts are still carried in bundle mode - one payload layout for
+# both modes is simpler than a conditional one, and a project can switch.
+dsh_gitlab_only() {
+    dsh_uses_gitlab && return 0
+    echo "KIT_GITLAB=no in dsh-kit.conf - $1 is not used; repos install from the bundles."
+    return 1
+}
+
 # dsh_no_placeholder <name> <value>. A value still holding a <placeholder> is not
 # a value: left in, it reaches GitLab as a real group name and fails several
 # clones later, by which point the cause is buried.

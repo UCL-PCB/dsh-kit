@@ -52,6 +52,7 @@ dsh_start_log "$@"
 dsh_git_guard || exit 1
 
 dsh_kit_settings "$PAYLOAD_DIR" || exit 1
+dsh_gitlab_only "$(basename "$0")" || exit 0
 GITLAB_HOST="$KIT_GITLAB_HOST"
 GROUP="$KIT_GITLAB_GROUP"
 # Working repos may live in another namespace - see dsh_repo_namespace in

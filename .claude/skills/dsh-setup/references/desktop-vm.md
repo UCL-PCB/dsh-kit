@@ -15,6 +15,12 @@ Windows-specific facts that decide the plan:
 | where `.venv` lives | not a given; step 6 decides |
 | per-machine settings | `~/dsh-kit.env` (optional) |
 
+**Bundle mode or GitLab mode** — `KIT_GITLAB` in the conf. In bundle mode (`no`, the default)
+steps 3 and 4 below are **skipped entirely**, the GitLab item in step 2 is skipped, and step 7
+clones from the payload's bundles. Every section marked *GitLab-only* applies only when the
+conf says `KIT_GITLAB="yes"`. The GitLab-only scripts are carried either way and, in bundle
+mode, print `KIT_GITLAB=no in dsh-kit.conf - <script> is not used` and exit 0.
+
 Writing `~/.config/uv/uv.toml` on Windows is the quiet version of this going wrong: uv never
 reads that file there, so the index is never configured, and the first download fails looking
 exactly like an Artifactory outage. The scripts detect the platform themselves
@@ -29,8 +35,9 @@ Every inside script reads, in rising precedence:
 2. **`~/dsh-kit.env`** — what this machine is. Optional, written on the VM, never carried.
    Same `KEY="value"` format, parsed not sourced. Keys:
    `KIT_WORKSPACE_DIR`, `KIT_PYTHON`, `KIT_PAYLOAD_DIR` (default `~/DSH_import`), `KIT_ZIP`,
-   `KIT_CLEAN_PATH` (`yes`/`no`), and per-machine overrides of `KIT_GITLAB_HOST`,
-   `KIT_GITLAB_GROUP`, `KIT_WORKING_NAMESPACE`. `$DSH_KIT_ENV` points at another file.
+   `KIT_CLEAN_PATH` (`yes`/`no`), and (GitLab mode) per-machine overrides of
+   `KIT_GITLAB_HOST`, `KIT_GITLAB_GROUP`, `KIT_WORKING_NAMESPACE`. `$DSH_KIT_ENV` points at
+   another file. `KIT_GITLAB` itself is not per-machine: it lives in the conf.
 3. **Flags** on the command line.
 
 On a first import, flags are the clearest — the operator sees each value as they type it.
@@ -40,9 +47,10 @@ nothing typed.
 
 ## Ask first
 
-- The Artifactory `<pypi-remote>` (step 5). The GitLab group comes from the conf.
+- The Artifactory `<pypi-remote>` (step 5). The GitLab group, in GitLab mode, comes from
+  the conf.
 - Is this a first import or a return visit? A return visit is `update_dsh_vm.bat` — see the
-  end of this file — and a first import is steps 1–8.
+  end of this file — and a first import is steps 1–8 (1, 2, 5–8 in bundle mode).
 - Is a payload rebuild needed? See `payload.md` — usually not.
 
 ## Step 0 — get the payload in
@@ -119,12 +127,13 @@ Windows-only section: the **count of Anaconda entries on PATH**, and which of
 `C: N: Q: R: S:` are mapped. A non-zero Anaconda count is the prime suspect for the numpy
 DLL failure at step 7, and is what step 6 tests.
 
-GitLab answering `HTTP 000` while Artifactory answers is almost always TLS, not
-reachability: `diagnose/diagnose_gitlab_reachability.sh` separates the two in a minute.
+GitLab-only: GitLab answering `HTTP 000` while Artifactory answers is almost always TLS,
+not reachability: `diagnose/diagnose_gitlab_reachability.sh` separates the two in a minute.
+In bundle mode the probe skips GitLab and says so (`--gitlab` probes it anyway).
 
-## Step 3 — the GitLab projects
+## Step 3 — the GitLab projects (GitLab-only)
 
-First visit only. In the GitLab web UI, under `KIT_GITLAB_GROUP` (and `KIT_WORKING_NAMESPACE`
+Skip in bundle mode. First visit only. In the GitLab web UI, under `KIT_GITLAB_GROUP` (and `KIT_WORKING_NAMESPACE`
 for working repos, if set), create one project per repo in `KIT_REPOS`, named exactly as the
 repo, and **empty** — no README, no initial commit. An initial commit makes the first push a
 non-fast-forward.
@@ -139,9 +148,9 @@ password rotates every 90 days):
 It erases the stored credential for the GitLab host and tests with a prompt. Username and
 **current DSH password**; GitLab here is AD-backed, so no personal access token.
 
-## Step 4 — mirror to GitLab
+## Step 4 — mirror to GitLab (GitLab-only)
 
-**First thing on this run that changes state.** Say so before handing it over.
+Skip in bundle mode. **First thing on this run that changes state.** Say so before handing it over.
 
 ```bash
 ./mirror_to_gitlab.sh             # first visit
@@ -253,9 +262,18 @@ the install is for. Never `conda activate` first.
 Add `--clean-path` if step 6 showed Anaconda shadowing. `--workspace` is **required on
 Windows** — this refuses to guess, because step 6 is what decides it.
 
-It clones every repo in `KIT_REPOS` from GitLab into `<workspace-dir>/src/` (from GitLab, not
-from the bundles: that proves the mirror is what everyone inside will clone from), checks
-each mirror clone's HEAD against `MANIFEST.txt`, then installs by `KIT_INSTALL_MODE`:
+It clones every repo in `KIT_REPOS` into `<workspace-dir>/src/`, checks each mirror clone's
+HEAD against `MANIFEST.txt`, then installs by `KIT_INSTALL_MODE`. Where it clones from is
+`KIT_GITLAB`:
+
+- **bundle mode** — straight from `<repo>.bundle` in the payload, on the manifest's branch.
+  The clone keeps no remote, because the payload directory is replaced by the next one; a
+  refresh fetches from the *current* payload's bundle and fast-forwards. No credential, no
+  network.
+- **GitLab mode** — from GitLab, not from the bundles: that proves the mirror is what
+  everyone inside will clone from. Refreshed with `git pull --ff-only`.
+
+Then the install:
 
 - **`venv`** — `uv venv`, then **one** `uv pip install` naming every repo editable, with
   `KIT_EXTRAS`. One call is what makes a first-party dependency resolve to the checkout
@@ -266,7 +284,8 @@ each mirror clone's HEAD against `MANIFEST.txt`, then installs by `KIT_INSTALL_M
   `uv sync --all-packages` (`--all-extras` adds every extra). A uv sync is **exact**: it
   removes whatever the lock does not name.
 
-Re-running is safe: existing clones are fetched and fast-forwarded rather than re-cloned.
+Re-running is safe: existing clones are fetched and fast-forwarded rather than re-cloned. A
+mirror with local edits to tracked files is refused, not merged over.
 A working repo (`KIT_WORKING_REPOS`) is never pulled: if this payload carries its bundle, its
 local edits are parked on `dsh-local/<stamp>` and it is overwritten to the payload's commit;
 if not, it is left exactly as it is.
@@ -284,9 +303,11 @@ Diagnosing a failure by what it names:
   mode, the generated (or carried) root's sources.
 - a build backend → step 5's probe was missing it.
 - the interpreter → outside `KIT_PYTHON_SPEC`.
-- `what is checked out is not what this payload carries` → GitLab was not refreshed from
-  this payload (step 4 with `--refresh`), a project does not exist, or a clone has local
-  edits (`rescue_local_edits.sh` — never "delete the clone", which destroys them).
+- `what is checked out is not what this payload carries` → a clone has local edits or
+  local commits (`rescue_local_edits.sh` — never "delete the clone", which destroys them);
+  in bundle mode, a bundle missing from the payload (`verify_payload.sh` FAILs on that);
+  in GitLab mode, GitLab not refreshed from this payload (step 4 with `--refresh`) or a
+  project that does not exist. The script's own hints follow the mode.
 
 ## Step 8 — console scripts
 
@@ -315,8 +336,9 @@ KIT_PYTHON="<full-path-to-python>"
 ```
 
 (and `KIT_CLEAN_PATH="yes"` if step 6 needed it). Every later trip is then: upload the new
-`DSH_upload/`, double-click `update_dsh_vm.bat` beside it — unpack, `mirror --refresh`,
-install, in one pass. `--skip unpack,mirror,install` and `--dry-run` work from a prompt.
+`DSH_upload/`, double-click `update_dsh_vm.bat` beside it — unpack, `mirror --refresh`
+(GitLab mode only; reported as "not used" in bundle mode), install, in one pass.
+`--skip unpack,mirror,install` and `--dry-run` work from a prompt.
 
 ## Getting results out
 

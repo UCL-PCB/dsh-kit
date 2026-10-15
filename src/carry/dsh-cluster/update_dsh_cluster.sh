@@ -8,13 +8,18 @@
 #   bash ./update_dsh_cluster.sh --check      # change nothing, report drift
 #   bash ./update_dsh_cluster.sh --dry-run    # print the commands, run nothing
 #
-# THERE IS NO MIRROR STEP, and that is the difference from the VM. Bundles are
-# pushed to GitLab-inside from the Desktop VM, which is the only box the airlock
-# delivers to; the cluster is a READER of that mirror. So the order across the two
-# boxes is: update_dsh_vm.bat on the VM first, this second. Running this before the
-# VM has mirrored gets you a clean fast-forward to yesterday's commit and a
-# MANIFEST mismatch, which install_packages.sh reports as a FAIL rather than
-# installing it.
+# THERE IS NO MIRROR STEP, and that is the difference from the VM. Where the
+# clones come from is KIT_GITLAB in the payload's dsh-kit.conf:
+#
+#   no   (bundle mode) install_packages.sh clones and refreshes straight from the
+#        .bundle files in the payload folder, exactly as on the VM. Nothing here
+#        depends on the VM having done anything first.
+#   yes  bundles are pushed to GitLab-inside from the Desktop VM, which is the only
+#        box the airlock delivers to; the cluster is a READER of that mirror. So the
+#        order across the two boxes is: update_dsh_vm.bat on the VM first, this
+#        second. Running this before the VM has mirrored gets you a clean
+#        fast-forward to yesterday's commit and a MANIFEST mismatch, which
+#        install_packages.sh reports as a FAIL rather than installing it.
 #
 # THE PAYLOAD FOLDER HAS TO TRAVEL VM -> CLUSTER for this to work, because the
 # arrow between those boxes is a person with WinSCP, not an scp. The load-bearing
@@ -27,14 +32,14 @@
 #   install_packages.sh   the step this wraps.
 #   lib/                  sourced by all of them.
 #
-# The .bundle files do NOT need to travel unless a WORKING repo is being refreshed:
-# a mirror is refreshed by fetch + pull --ff-only from GitLab-inside. Copying the
-# whole payload folder is simplest.
+#   <repo>.bundle         in bundle mode, the ONLY source of the code. In GitLab
+#                         mode needed only to refresh a WORKING repo. Copying the
+#                         whole payload folder is simplest either way.
 #
 # --check is the pre-flight. It compares three things per repo - what is checked
-# out here, what the manifest says, and what GitLab's branch tip actually is - and
-# names which of the three is behind. Run it before submitting a job rather than
-# discovering a stale install partway into one.
+# out here, what the manifest says, and where the code comes from (GitLab's branch
+# tip, or the bundle's) - and names which of the three is behind. Run it before
+# submitting a job rather than discovering a stale install partway into one.
 #
 # Writes Logs/update_dsh_cluster.log beside itself, so the result is reviewable on
 # the cluster without relaying it anywhere.
@@ -64,8 +69,9 @@ usage() {
     cat <<'USAGE'
 Usage: bash ./update_dsh_cluster.sh [options]
 
-  --check         report drift only: clone HEAD vs MANIFEST vs GitLab. Changes
-                  nothing, clones nothing, exits 1 if anything is behind.
+  --check         report drift only: clone HEAD vs MANIFEST vs GitLab (or vs the
+                  bundle, when KIT_GITLAB=no). Changes nothing, clones nothing,
+                  exits 1 if anything is behind.
   --skip LIST     comma-separated steps not to run: unpack, install
   --dry-run       print the commands that would run, then stop
   --config FILE   read per-machine settings from FILE instead of ~/dsh-kit.env
@@ -139,13 +145,19 @@ if [ "$CHECK" -eq 1 ]; then
     fi
     dsh_kit_settings "$PAYLOAD_DIR" || exit 1
     WORKSPACE="${KIT_WORKSPACE_DIR:-${HOME}/Scratch/${KIT_PROJECT}}"
-    dsh_no_placeholder KIT_GITLAB_GROUP "$KIT_GITLAB_GROUP" || exit 1
-    dsh_gitlab_env "$KIT_GITLAB_HOST" "$KIT_GITLAB_GROUP" "$KIT_WORKING_NAMESPACE"
+    if dsh_uses_gitlab; then
+        SOURCE="gitlab"
+        dsh_no_placeholder KIT_GITLAB_GROUP "$KIT_GITLAB_GROUP" || exit 1
+        dsh_gitlab_env "$KIT_GITLAB_HOST" "$KIT_GITLAB_GROUP" "$KIT_WORKING_NAMESPACE"
+    else
+        SOURCE="bundle"
+    fi
     printf '  %-16s %s\n' "workspace" "$WORKSPACE"
+    printf '  %-16s %s\n' "source"    "$SOURCE  (KIT_GITLAB=${KIT_GITLAB})"
     echo
 
-    echo "=== Drift: clone HEAD vs MANIFEST vs GitLab ==="
-    printf '  %-26s %-10s %-10s %-10s %s\n' "repo" "here" "manifest" "gitlab" "verdict"
+    echo "=== Drift: clone HEAD vs MANIFEST vs ${SOURCE} ==="
+    printf '  %-26s %-10s %-10s %-10s %s\n' "repo" "here" "manifest" "$SOURCE" "verdict"
     DRIFT=0
     while read -r pkg branch want role _; do
         case "$pkg" in
@@ -159,17 +171,28 @@ if [ "$CHECK" -eq 1 ]; then
         else
             here_sha=""
         fi
-        # GIT_TERMINAL_PROMPT=0 so a missing credential is an ANSWER rather than a
-        # prompt that hangs a login shell nobody is watching.
-        remote_sha="$(GIT_TERMINAL_PROMPT=0 git ls-remote "$(dsh_repo_remote "$pkg")" \
-                      "refs/heads/${branch}" 2>/dev/null | awk '{print $1}')"
+        if [ "$SOURCE" = "gitlab" ]; then
+            # GIT_TERMINAL_PROMPT=0 so a missing credential is an ANSWER rather than
+            # a prompt that hangs a login shell nobody is watching.
+            remote_sha="$(GIT_TERMINAL_PROMPT=0 git ls-remote "$(dsh_repo_remote "$pkg")" \
+                          "refs/heads/${branch}" 2>/dev/null | awk '{print $1}')"
+        elif [ -f "${PAYLOAD_DIR}/${pkg}.bundle" ]; then
+            remote_sha="$(git bundle list-heads "${PAYLOAD_DIR}/${pkg}.bundle" \
+                          "refs/heads/${branch}" 2>/dev/null | awk '{print $1}')"
+        else
+            remote_sha=""
+        fi
 
         if [ -z "$here_sha" ]; then
             verdict="NOT CLONED - run this script without --check"; DRIFT=1
-        elif [ -z "$remote_sha" ]; then
+        elif [ -z "$remote_sha" ] && [ "$SOURCE" = "gitlab" ]; then
             verdict="GitLab unreachable or no credential"; DRIFT=1
-        elif [ "$remote_sha" != "$want" ]; then
+        elif [ -z "$remote_sha" ]; then
+            verdict="no ${pkg}.bundle (or no ${branch} in it) - copy the payload over"; DRIFT=1
+        elif [ "$remote_sha" != "$want" ] && [ "$SOURCE" = "gitlab" ]; then
             verdict="GitLab BEHIND - mirror from the VM first"; DRIFT=1
+        elif [ "$remote_sha" != "$want" ]; then
+            verdict="bundle does not match MANIFEST - payload is inconsistent"; DRIFT=1
         elif [ "$here_sha" != "$want" ]; then
             verdict="clone BEHIND - run this script without --check"; DRIFT=1
         else
@@ -183,6 +206,7 @@ if [ "$CHECK" -eq 1 ]; then
         echo "RESULT: PASS - every mirror repo here is at the commit this payload carries."
         exit 0
     fi
+    if [ "$SOURCE" = "gitlab" ]; then
     cat >&2 <<'EOF'
 RESULT: DRIFT - the verdict column says which end is behind.
 
@@ -190,6 +214,16 @@ RESULT: DRIFT - the verdict column says which end is behind.
                   push the bundles to GitLab-inside; this one only reads it.
   clone BEHIND    bash ./update_dsh_cluster.sh
 EOF
+    else
+    cat >&2 <<'EOF'
+RESULT: DRIFT - the verdict column says which end is behind.
+
+  no bundle /     the payload folder here is incomplete or mixed from two
+  bundle does     trips. Copy the whole folder over again from the VM, then
+  not match       bash ./update_dsh_cluster.sh
+  clone BEHIND    bash ./update_dsh_cluster.sh
+EOF
+    fi
     exit 1
 fi
 echo
