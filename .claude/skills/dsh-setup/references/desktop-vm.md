@@ -47,7 +47,7 @@ nothing typed.
 
 ## Ask first
 
-- The Artifactory `<pypi-remote>` (step 5). The GitLab group, in GitLab mode, comes from
+- The Artifactory `<user>` and `<token>` (step 5). The GitLab group, in GitLab mode, comes from
   the conf.
 - Is this a first import or a return visit? A return visit is `update_dsh_vm.bat` — see the
   end of this file — and a first import is steps 1–8 (1, 2, 5–8 in bundle mode).
@@ -200,12 +200,12 @@ wanting the `<user>` and `<token>` from the Artifactory "Set Me Up" page:
 1. `~/.netrc` (persistent, no credential in any file the script rewrites) — the header of
    `install_uv.sh` has the exact line. Then:
    ```bash
-   ./install_uv.sh --artifactory artifactory.idhs.ucl.ac.uk --pypi-remote <pypi-remote>
+   ./install_uv.sh
    ```
 2. `UV_INDEX_ARTIFACTORY_USERNAME` / `_PASSWORD` in the environment.
 3. Last resort, the whole "Set Me Up" URL as one string — do **not** assemble it from parts:
    ```bash
-   ./install_uv.sh --index-url 'https://<user>:<token>@artifactory.idhs.ucl.ac.uk/artifactory/api/pypi/<pypi-remote>/simple'
+   ./install_uv.sh --index-url 'https://<user>:<token>@artifactory.idhs.ucl.ac.uk/artifactory/api/pypi/pypi/simple'
    ```
    This leaves a live token in `uv.toml` and in the `.bak` the next run makes. Percent-encode
    `@ / : # %` in the token.

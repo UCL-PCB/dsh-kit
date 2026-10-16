@@ -13,7 +13,7 @@ changes things; if the guide and this file disagree, the guide wins and this fil
 |---|---|
 | File Transfer Portal / FTPS | `filetransfer.idhs.ucl.ac.uk` |
 | GitLab | `gitlab.idhs.ucl.ac.uk` (repos `https://gitlab.idhs.ucl.ac.uk/<user-or-group>/<repo>`) |
-| Artifactory | `artifactory.idhs.ucl.ac.uk` (has Conda, PyPI, CRAN remotes) |
+| Artifactory | `artifactory.idhs.ucl.ac.uk` (has Conda, PyPI, CRAN remotes; the PyPI remote is named `pypi` for everyone) |
 | Cluster login node | `cluster.idhs.ucl.ac.uk` (PuTTY shortcut; also JupyterLab + RStudio Server in the Desktop browser) |
 | Application & Data Portal | `accessgateway.idhs.ucl.ac.uk` |
 | Security portal | `registration.idhs.ucl.ac.uk/dsc` (self-service), `/drp` (password reset), `/dea` (emergency access) |

@@ -72,19 +72,18 @@ completed rather than restarting — the logs on the box name it.
 
 ## Before you begin, know these
 
-Most values come from the conf and are not asked for again. Two are genuinely site- or
-person-specific and **must not be guessed**; ask for them once and carry them through:
+Most values come from the conf and are not asked for again. One is genuinely
+machine-specific and **must not be guessed**; ask for it once and carry it through:
 
-- `<pypi-remote>` — the PyPI remote repository name inside Artifactory, read off its
-  "Set Me Up" page. Needed by `install_uv.sh`.
 - `<workspace-dir>` — where the clones and `.venv` go on the VM. Not known until
   `check_venv_location.sh` has run; never default it.
 
 In GitLab mode the conf will not load with `KIT_GITLAB_GROUP` still `<gitlab-group>`, so
 that is settled before the payload is built. In bundle mode it is never read.
 
-Hostnames, by contrast, are known and documented — see `references/dsh-facts.md`. Use them
-as written rather than turning them back into placeholders.
+Hostnames and the Artifactory PyPI remote name (`pypi`, the same for every DSH user), by
+contrast, are known — see `references/dsh-facts.md`. They are `install_uv.sh`'s defaults; use
+them as written rather than turning them back into placeholders.
 
 ## The procedure inside the payload
 

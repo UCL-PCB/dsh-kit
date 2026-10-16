@@ -7,7 +7,10 @@
 #
 # Run from the directory the airlock payload landed in:
 #
-#   ./install_uv.sh --artifactory artifactory.idhs.ucl.ac.uk --pypi-remote <pypi-remote>
+#   ./install_uv.sh
+#
+# Host and PyPI remote default to UCL's (artifactory.idhs.ucl.ac.uk, remote "pypi");
+# --artifactory / --pypi-remote override them.
 #
 # Artifactory needs credentials - anonymous fetches get a 401. Three routes, best
 # first. All three want the <user> and <token> from the "Set Me Up" page; the
@@ -22,7 +25,7 @@
 #      Not sourced by non-interactive shells, so a batch job loses it unless qsub -V.
 #
 #   3. The whole "Set Me Up" URL, as one string rather than assembled from parts:
-#        ./install_uv.sh --index-url 'https://<user>:<token>@artifactory.idhs.ucl.ac.uk/artifactory/api/pypi/<pypi-remote>/simple'
+#        ./install_uv.sh --index-url 'https://<user>:<token>@artifactory.idhs.ucl.ac.uk/artifactory/api/pypi/pypi/simple'
 #      Last resort: it puts a live token in uv.toml AND in the uv.toml.bak this
 #      script makes on the next run. Percent-encode @ / : # % in the token, or uv
 #      parses the URL at the wrong character and sends a mangled username.
@@ -50,11 +53,11 @@ PAYLOAD_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "${PAYLOAD_DIR}/lib/dsh_log.sh"
 dsh_start_log "$@"
 
-# UCL-documented host from the DSH User Guide & FAQs. --artifactory still overrides,
-# and --index-url overrides both. The PyPI remote's NAME is not documented anywhere -
-# it comes off the Artifactory "Set Me Up" page - so that stays required.
+# UCL-documented host from the DSH User Guide & FAQs, and the PyPI remote's name on it,
+# which is "pypi" for every DSH user. --artifactory / --pypi-remote still override, and
+# --index-url overrides both.
 ARTIFACTORY_HOST="artifactory.idhs.ucl.ac.uk"
-PYPI_REMOTE=""
+PYPI_REMOTE="pypi"
 INDEX_URL=""
 # What the checkpoint fetches to prove the index works. pandas proves auth and URL;
 # add each repo's BUILD BACKEND with --probe-package (see the checkpoint below).
@@ -67,7 +70,7 @@ WANT_NETRC="yes"
 usage() {
     sed -n '2,20p' "$0"
     echo
-    echo "Usage: $0 (--artifactory HOST --pypi-remote NAME | --index-url URL)"
+    echo "Usage: $0 [--artifactory HOST] [--pypi-remote NAME] [--index-url URL]"
     echo "          [--archive FILE] [--bindir DIR] [--native-tls yes|no] [--no-netrc]"
     echo "          [--probe-package SPEC]...   e.g. hatchling, setuptools, 'uv_build<0.12'"
     exit 1
@@ -92,6 +95,7 @@ if [ -z "$INDEX_URL" ]; then
     [ -n "$ARTIFACTORY_HOST" ] || { echo "Error: --artifactory (or --index-url) is required" >&2; usage; }
     [ -n "$PYPI_REMOTE" ]      || { echo "Error: --pypi-remote (or --index-url) is required" >&2; usage; }
     INDEX_URL="https://${ARTIFACTORY_HOST}/artifactory/api/pypi/${PYPI_REMOTE}/simple"
+    echo "Index: ${INDEX_URL}   (host ${ARTIFACTORY_HOST}, remote ${PYPI_REMOTE})"
 fi
 
 # The DSH terminates TLS with its own CA on BOTH boxes. uv bundles webpki and

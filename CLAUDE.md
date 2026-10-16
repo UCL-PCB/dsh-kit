@@ -28,9 +28,10 @@ by copying it.
 - **One step at a time.** One command, what a pass looks like, then stop. A queued step 3 has
   already been run by the time step 2 shows it should have been different.
 - **Placeholders, not guesses.** Anything environment-specific — `<workspace-dir>`, `<group>`,
-  `<username>`, `<pypi-remote>` — is written as a placeholder for the user to fill. Do not
-  invent a plausible default; inside, a wrong path costs a round trip. The UCL hostnames in
-  `.claude/skills/dsh-setup/references/dsh-facts.md` are the exception.
+  `<username>` — is written as a placeholder for the user to fill. Do not invent a plausible
+  default; inside, a wrong path costs a round trip. The UCL hostnames and the Artifactory
+  PyPI remote name (`pypi`) in `.claude/skills/dsh-setup/references/dsh-facts.md` are the
+  exception.
 - **Long commands become scripts.** Anything over one line or ~30 characters is written as a
   script under `src/carry/`, carried in the payload, and run by name — the user would
   otherwise retype it by hand inside. One-off mid-session scripts can travel alone through
