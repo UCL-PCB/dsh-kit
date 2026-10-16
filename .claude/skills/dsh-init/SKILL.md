@@ -1,6 +1,6 @@
 ---
 name: dsh-init
-description: Interview the user about their project and write dsh-kit.conf — which git repos to carry into the UCL Data Safe Haven, in what order, with which extras, installed as a plain venv or a uv workspace, straight from the bundles or through the DSH's internal GitLab, for the VM only or the VM and the cluster. Inspects each repo's pyproject.toml to propose every answer rather than asking blind, checks every repo is committed and pushed, and validates the result. Use when dsh-kit.conf does not exist yet, when setting this template up for a new project, when adding or removing a repo from what is carried in, or when asked to "set up dsh-kit", "configure dsh-kit", "init", or "which packages go into the DSH".
+description: Interview the user about their project and write dsh-kit.conf — which git repos to carry into the UCL Data Safe Haven, in what order, with which extras, installed as a plain venv or a uv workspace, straight from the bundles or through the DSH's internal GitLab, for the VM only or the VM and the cluster. Inspects each repo's pyproject.toml to propose every answer rather than asking blind, checks every repo is committed and pushed, and validates the result. Turns a folder of loose scripts or notebooks into a minimal git-tracked package first, if that is what the user has. Use when dsh-kit.conf does not exist yet, when setting this template up for a new project, when adding or removing a repo from what is carried in, or when asked to "set up dsh-kit", "configure dsh-kit", "init", or "which packages go into the DSH".
 ---
 
 # dsh-init
@@ -32,7 +32,10 @@ them under one parent; `export_bundles.sh --package <path>` handles a one-off, b
 `build_payload.sh` exports `KIT_REPOS` from `KIT_REPOS_DIR` only.
 
 List the candidate directories that are git repos with a `pyproject.toml`, and ask which
-ones go in. For each chosen repo, read its `pyproject.toml`:
+ones go in. If the user's code is loose scripts or notebooks instead (a folder that is not
+a git repo, has no `pyproject.toml`, or both), it cannot be carried as it is. Offer to
+scaffold it into a minimal package, following `references/loose-scripts.md`, and come back
+here once it is committed and pushed. For each chosen repo, read its `pyproject.toml`:
 
 - `[project] name` — note if it differs from the directory name; the **directory name** is
   what goes in `KIT_REPOS` (and, in GitLab mode, the GitLab project name inside).
