@@ -12,6 +12,8 @@ project's git repos across that gap and into a working `.venv`, verified at ever
 
 **Who it is for:** a researcher at UCL with one or more Python packages in git repos (a
 `pyproject.toml` each, pushed to GitHub or similar) who needs them installed inside the DSH.
+Only have a folder of scripts or notebooks? `/dsh-init` turns it into a minimal package
+first: a `pyproject.toml`, `git init` and a commit, with the scripts left where they are.
 It is built to be driven with **Claude Code**: two skills interview you, build the payload,
 and walk you through the import one step at a time. Every script also works by hand.
 
