@@ -100,16 +100,17 @@ Then in the GitLab UI: protect the default branch, push allowed for you only.
 
 ### 5. Install uv and point it at Artifactory
 
-Get `<user>`, `<token>` and the PyPI remote name from Artifactory's "Set Me Up" page
+Get `<user>` and `<token>` from Artifactory's "Set Me Up" page
 (`https://artifactory.idhs.ucl.ac.uk`). Put the credential in `~/.netrc` — the exact line is
 at the top of `install_uv.sh`. Then:
 
 ```bash
-./install_uv.sh --artifactory artifactory.idhs.ucl.ac.uk --pypi-remote <pypi-remote> --probe-package <build-backend>
+./install_uv.sh --probe-package <build-backend>
 ```
 
 `<build-backend>` is each repo's build backend (hatchling, setuptools, uv_build …) —
-repeat `--probe-package` for each.
+repeat `--probe-package` for each. The host and the PyPI remote (`pypi`) are UCL's
+defaults; `--artifactory` / `--pypi-remote` override them.
 
 PASS: `RESULT: PASS - the index works.`
 FAIL: 401 → credential wrong or expired (it dies with every 90-day password change);

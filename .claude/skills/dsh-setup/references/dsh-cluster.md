@@ -109,7 +109,7 @@ MPI, 50 GB home quota. Drained of batch jobs before the monthly patch.
 ## Step 4 — install uv
 
 ```bash
-./install_uv.sh --artifactory artifactory.idhs.ucl.ac.uk --pypi-remote <pypi-remote>
+./install_uv.sh
 ```
 
 Differences from the VM:
